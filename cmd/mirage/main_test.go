@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 
 	mantaartifact "github.com/odvcencio/manta/artifact/manta"
+	"github.com/odvcencio/mirage"
 )
 
 func TestRunInitMantaWritesRunnableArtifact(t *testing.T) {
@@ -29,6 +32,31 @@ func TestRunInitMantaWritesRunnableArtifact(t *testing.T) {
 		t.Fatalf("unexpected artifact shape: entrypoints=%d steps=%d", len(mod.EntryPoints), len(mod.Steps))
 	}
 	if err := runCheckManta([]string{"-in", path, "-entry", "train_step"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunTrainMantaSmokeUsesDecodedImageFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "source.png")
+	img, err := mirage.NewRGBImage(16, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for y := 0; y < img.Height; y++ {
+		for x := 0; x < img.Width; x++ {
+			img.Pix[y*img.Width+x] = float32(x) / float32(img.Width-1)
+			img.Pix[img.Width*img.Height+y*img.Width+x] = float32(y) / float32(img.Height-1)
+			img.Pix[2*img.Width*img.Height+y*img.Width+x] = 0.25 + 0.5*float32((x+y)%7)/6
+		}
+	}
+	var encoded bytes.Buffer
+	if err := mirage.EncodePNG(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runTrainMantaSmoke([]string{"-in", path, "-steps", "4", "-bits", "2", "-latent-channels", "4", "-hyper-channels", "4"}); err != nil {
 		t.Fatal(err)
 	}
 }

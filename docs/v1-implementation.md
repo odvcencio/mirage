@@ -48,12 +48,17 @@ schema and host-reference runtime form:
 - `mirage check-manta` loads an emitted `.mll` through the Manta runtime's
   WebGPU backend surface and executes an entrypoint with deterministic stub
   tensors, keeping the Mirage repo's Manta export path self-checking
+- `mirage train-manta-smoke` decodes one or more PNG/JPEG/PPM images,
+  center-crops them to the Manta v1 input shape, initializes deterministic
+  trainable weights, and runs the `train_step` graph through Manta
+  `ExecuteAutograd` with clipped SGD
 
 Remaining work to reach the publishable Balle 2018 result:
 
 - CUDA forward/backward kernels promoted from host-reference execution
 - WebGPU device kernels promoted from host-reference execution
-- full generic autograd for rate-distortion training
+- dataset loading, batching, checkpoint writing, and metric sweeps beyond the
+  current image-backed reference training smoke
 - production `.mll` artifacts that replace the Go patch model fingerprint
 - hyperprior synthesis and production learned probabilities instead of the
   current default uniform executable model

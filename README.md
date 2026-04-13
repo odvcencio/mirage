@@ -18,6 +18,8 @@ This workspace currently lands the executable host-side v1 path:
 - a `mirage` CLI that can encode PNG/JPEG/PPM to `.mrg`, decode `.mrg` to PNG,
   and print stream metadata
 - a Manta import path that exports the Mirage Image v1 `.mll` operator surface
+- an image-backed Manta reference training smoke that runs the Mirage v1
+  rate-distortion graph through Manta `ExecuteAutograd`
 
 The learned-codec pieces from the spec live in Manta. This repo now imports the
 sibling Manta module for the v1 artifact builder, while the standalone
@@ -35,6 +37,7 @@ go run ./cmd/mirage decode -in input.mrg -out decoded.png
 go run ./cmd/mirage eval -source input.png -mrg input.mrg
 go run ./cmd/mirage init-manta -out mirage_v1.mll
 go run ./cmd/mirage check-manta -in mirage_v1.mll -entry train_step
+go run ./cmd/mirage train-manta-smoke -in input.png -steps 24 -crop 16 -bits 2
 ```
 
 Build the browser decoder assets:

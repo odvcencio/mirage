@@ -62,7 +62,10 @@ func mantaModelsConfig(cfg MantaConfig) models.MirageV1Config {
 		ImageHeight:    cfg.ImageHeight,
 		ImageWidth:     cfg.ImageWidth,
 		LatentChannels: cfg.LatentChannels,
+		HyperChannels:  cfg.HyperChannels,
 		BitWidth:       cfg.BitWidth,
 		Seed:           cfg.Seed,
+		Factorization:  mantaFactorizationString(cfg.Factorization),
+		Lambda:         cfg.Lambda,
 	}
 }

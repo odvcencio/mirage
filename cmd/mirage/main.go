@@ -37,6 +37,8 @@ func main() {
 		err = runInitManta(os.Args[2:])
 	case "check-manta":
 		err = runCheckManta(os.Args[2:])
+	case "train-manta-smoke":
+		err = runTrainMantaSmoke(os.Args[2:])
 	default:
 		usage(os.Stderr)
 		os.Exit(2)
@@ -55,6 +57,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  mirage eval   -source image.png -mrg image.mrg")
 	fmt.Fprintln(w, "  mirage init-manta -out mirage_v1.mll [-bits 2|4|8]")
 	fmt.Fprintln(w, "  mirage check-manta -in mirage_v1.mll [-entry train_step]")
+	fmt.Fprintln(w, "  mirage train-manta-smoke -in image.png [-in image2.png] [-steps 24] [-crop 16]")
 }
 
 func runEncode(args []string) error {
@@ -215,19 +218,29 @@ func runInitManta(args []string) error {
 	width := fs.Int("width", 0, "image width")
 	height := fs.Int("height", 0, "image height")
 	latentChannels := fs.Int("latent-channels", 0, "latent channels")
+	hyperChannels := fs.Int("hyper-channels", 0, "hyperprior channels")
 	bits := fs.Int("bits", 0, "TurboQuant bits per latent coordinate: 2, 4, or 8")
+	lambda := fs.Float64("lambda", 0, "rate-distortion lambda")
+	factorizationFlag := fs.String("factorization", "categorical", "coordinate entropy factorization: categorical or bit-plane")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *out == "" {
 		return fmt.Errorf("init-manta requires -out")
 	}
+	factorization, err := parseFactorization(*factorizationFlag)
+	if err != nil {
+		return err
+	}
 	cfg := mirage.MantaConfig{
 		Name:           *name,
 		ImageWidth:     *width,
 		ImageHeight:    *height,
 		LatentChannels: *latentChannels,
+		HyperChannels:  *hyperChannels,
 		BitWidth:       *bits,
+		Factorization:  factorization,
+		Lambda:         *lambda,
 	}
 	if err := mirage.WriteMantaMLL(*out, cfg); err != nil {
 		return err
@@ -284,6 +297,92 @@ func runCheckManta(args []string) error {
 	fmt.Printf("checked Manta artifact %s\n", *in)
 	fmt.Printf("module=%s backend=%s entry=%s\n", mod.Name, prog.Backend(), entryName)
 	fmt.Printf("outputs=%s\n", strings.Join(mantaOutputSummaries(result.Outputs), "; "))
+	return nil
+}
+
+func runTrainMantaSmoke(args []string) error {
+	fs := flag.NewFlagSet("train-manta-smoke", flag.ExitOnError)
+	var inputs stringListFlag
+	fs.Var(&inputs, "in", "input PNG, JPEG, or PPM; repeat for multiple images")
+	steps := fs.Int("steps", 24, "reference SGD steps")
+	lr := fs.Float64("lr", 0.02, "reference SGD learning rate")
+	clip := fs.Float64("clip", 0.5, "gradient clipping threshold")
+	weightDecay := fs.Float64("weight-decay", 0, "SGD weight decay")
+	crop := fs.Int("crop", 16, "center crop size")
+	width := fs.Int("width", 0, "center crop width; defaults to -crop")
+	height := fs.Int("height", 0, "center crop height; defaults to -crop")
+	latentChannels := fs.Int("latent-channels", 4, "latent channels")
+	hyperChannels := fs.Int("hyper-channels", 0, "hyperprior channels; defaults to latent channels")
+	bits := fs.Int("bits", 2, "TurboQuant bits per latent coordinate: 2, 4, or 8")
+	lambda := fs.Float64("lambda", 0.001, "rate-distortion lambda")
+	factorizationFlag := fs.String("factorization", "categorical", "coordinate entropy factorization: categorical or bit-plane")
+	modelSeed := fs.Int64("model-seed", 0, "Manta graph seed")
+	weightSeed := fs.Int64("weight-seed", 7, "deterministic weight initialization seed")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if len(inputs) == 0 {
+		return fmt.Errorf("train-manta-smoke requires at least one -in image")
+	}
+	factorization, err := parseFactorization(*factorizationFlag)
+	if err != nil {
+		return err
+	}
+	images := make([]mirage.RGBImage, 0, len(inputs))
+	formats := make([]string, 0, len(inputs))
+	for _, path := range inputs {
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		img, format, decodeErr := mirage.DecodeImage(f)
+		closeErr := f.Close()
+		if decodeErr != nil {
+			return decodeErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		images = append(images, img)
+		formats = append(formats, format)
+	}
+	cfg := mirage.MantaConfig{
+		ImageWidth:     *width,
+		ImageHeight:    *height,
+		LatentChannels: *latentChannels,
+		HyperChannels:  *hyperChannels,
+		BitWidth:       *bits,
+		Seed:           *modelSeed,
+		Factorization:  factorization,
+		Lambda:         *lambda,
+	}
+	result, err := mirage.TrainMantaReferenceImages(images, mirage.MantaReferenceTrainOptions{
+		Config:       cfg,
+		Steps:        *steps,
+		LearningRate: float32(*lr),
+		GradientClip: float32(*clip),
+		WeightDecay:  float32(*weightDecay),
+		CropSize:     *crop,
+		WeightSeed:   *weightSeed,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("trained Manta Mirage v1 reference smoke\n")
+	fmt.Printf("images=%d formats=%s crop=%dx%d bits=%d latent_channels=%d hyper_channels=%d factorization=%s lambda=%.6g steps=%d\n",
+		result.Images,
+		strings.Join(formats, ","),
+		result.ImageWidth,
+		result.ImageHeight,
+		result.BitWidth,
+		result.LatentChannels,
+		result.HyperChannels,
+		result.Factorization,
+		result.Lambda,
+		result.Steps,
+	)
+	fmt.Printf("loss=%.6f->%.6f delta=%.6f\n", result.InitialLoss, result.FinalLoss, result.InitialLoss-result.FinalLoss)
+	fmt.Printf("mse=%.6f->%.6f rate=%.6f->%.6f\n", result.InitialMSE, result.FinalMSE, result.InitialRate, result.FinalRate)
 	return nil
 }
 
@@ -419,4 +518,20 @@ func sortStrings(values []string) {
 			values[j], values[j-1] = values[j-1], values[j]
 		}
 	}
+}
+
+type stringListFlag []string
+
+func (f *stringListFlag) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *stringListFlag) Set(value string) error {
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			*f = append(*f, part)
+		}
+	}
+	return nil
 }
