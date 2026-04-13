@@ -190,7 +190,7 @@
         <aside class="panel">
           <div id="drop" class="drop">
             <strong>Drop a .mrg file</strong>
-            <span>Decode runs locally through Go WASM.</span>
+            <span>Decode runs locally through Go WASM and WebGPU.</span>
             <label class="file-button" for="file">Choose file</label>
             <input id="file" type="file" accept=".mrg" />
           </div>
@@ -228,7 +228,7 @@
       async function decodeFile(file) {
         setStatus(`Decoding ${file.name}`);
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const result = globalThis.mirageDecode(bytes);
+        const result = await globalThis.mirageDecode(bytes);
         if (!result.ok) {
           setStatus(result.error);
           return;
@@ -237,7 +237,7 @@
         canvas.height = result.height;
         const image = new ImageData(result.rgba, result.width, result.height);
         ctx.putImageData(image, 0, 0);
-        setStatus(`${file.name} ${result.width}x${result.height}`);
+        setStatus(`${file.name} ${result.width}x${result.height} ${result.backend}`);
       }
 
       fileEl.addEventListener("change", () => {

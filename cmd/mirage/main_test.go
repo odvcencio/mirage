@@ -25,7 +25,7 @@ func TestRunInitMantaWritesRunnableArtifact(t *testing.T) {
 	if mod.Name != "mirage_image_v1" {
 		t.Fatalf("module name = %q", mod.Name)
 	}
-	if len(mod.EntryPoints) != 2 || len(mod.Steps) == 0 {
+	if len(mod.EntryPoints) != 4 || len(mod.Steps) == 0 {
 		t.Fatalf("unexpected artifact shape: entrypoints=%d steps=%d", len(mod.EntryPoints), len(mod.Steps))
 	}
 	if err := runCheckManta([]string{"-in", path, "-entry", "train_step"}); err != nil {

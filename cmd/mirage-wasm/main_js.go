@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"syscall/js"
 
 	"github.com/odvcencio/mirage"
@@ -15,18 +16,43 @@ func main() {
 
 func decode(this js.Value, args []js.Value) any {
 	if len(args) < 1 {
-		return errorObject("mirageDecode expects a Uint8Array")
+		return resolvedError("mirageDecode expects a Uint8Array")
 	}
 	input := args[0]
 	if input.IsUndefined() || input.IsNull() {
-		return errorObject("mirageDecode expects a Uint8Array")
+		return resolvedError("mirageDecode expects a Uint8Array")
 	}
 	data := make([]byte, input.Get("byteLength").Int())
 	js.CopyBytesToGo(data, input)
-	img, err := mirage.DecodeBytesMRG(data, mirage.DefaultDecodeOptions())
-	if err != nil {
-		return errorObject(err.Error())
-	}
+	return promise(func() js.Value {
+		result, err := mirage.DecodeBytesMRGManta(context.Background(), data, mirage.DefaultDecodeOptions())
+		if err != nil {
+			return errorObject(err.Error())
+		}
+		return imageObject(result)
+	})
+}
+
+func promise(fn func() js.Value) js.Value {
+	executor := js.FuncOf(func(this js.Value, args []js.Value) any {
+		resolve := args[0]
+		go func() {
+			resolve.Invoke(fn())
+		}()
+		return nil
+	})
+	defer executor.Release()
+	return js.Global().Get("Promise").New(executor)
+}
+
+func resolvedError(message string) js.Value {
+	return promise(func() js.Value {
+		return errorObject(message)
+	})
+}
+
+func imageObject(result mirage.MantaDecodeResult) js.Value {
+	img := result.Image
 	rgba := make([]byte, img.Width*img.Height*4)
 	for y := 0; y < img.Height; y++ {
 		for x := 0; x < img.Width; x++ {
@@ -41,6 +67,7 @@ func decode(this js.Value, args []js.Value) any {
 	out.Set("ok", true)
 	out.Set("width", img.Width)
 	out.Set("height", img.Height)
+	out.Set("backend", result.ExecutionMode)
 	bytes := js.Global().Get("Uint8ClampedArray").New(len(rgba))
 	js.CopyBytesToJS(bytes, rgba)
 	out.Set("rgba", bytes)
