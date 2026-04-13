@@ -3,8 +3,6 @@ package mirage
 import (
 	"bytes"
 	"fmt"
-
-	turboquant "github.com/odvcencio/turboquant"
 )
 
 const (
@@ -88,11 +86,7 @@ func Encode(img RGBImage, opts EncodeOptions) (File, error) {
 	if err != nil {
 		return File{}, err
 	}
-	coordPayload, err := EncodeBytes(code.Coordinates)
-	if err != nil {
-		return File{}, err
-	}
-	normPayload, err := EncodeBytes(code.Norms)
+	payloads, err := EncodeLatentPayloads(code, opts.Factorization)
 	if err != nil {
 		return File{}, err
 	}
@@ -106,10 +100,7 @@ func Encode(img RGBImage, opts EncodeOptions) (File, error) {
 		LatentHeight:     uint32(shape.Height),
 		LatentWidth:      uint32(shape.Width),
 		ModelFingerprint: ModelFingerprintForSeed(opts.Seed),
-	}, Payloads{
-		CCoords: coordPayload,
-		CNorms:  normPayload,
-	})
+	}, payloads)
 }
 
 // Decode reconstructs an RGB image from a Mirage v1 .mrg file produced by
@@ -133,21 +124,9 @@ func Decode(file File, opts DecodeOptions) (RGBImage, error) {
 	if shape.Height != ceilDiv(int(file.Header.ImageHeight), PatchSize) || shape.Width != ceilDiv(int(file.Header.ImageWidth), PatchSize) {
 		return RGBImage{}, fmt.Errorf("mirage: latent shape does not match patch model")
 	}
-	coordLen := shape.Positions() * turboquant.PackedSize(shape.Channels, int(file.Header.BitWidth))
-	normLen := shape.Positions()
-	coords, err := DecodeBytes(file.Payloads.CCoords, coordLen)
+	code, err := DecodeLatentPayloads(file.Payloads, shape, int(file.Header.BitWidth), file.Header.Factorization())
 	if err != nil {
 		return RGBImage{}, err
-	}
-	norms, err := DecodeBytes(file.Payloads.CNorms, normLen)
-	if err != nil {
-		return RGBImage{}, err
-	}
-	code := LatentCode{
-		Shape:       shape,
-		BitWidth:    int(file.Header.BitWidth),
-		Coordinates: coords,
-		Norms:       norms,
 	}
 	latents, err := DecodeLatents(code, opts.Seed)
 	if err != nil {

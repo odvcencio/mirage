@@ -10,13 +10,25 @@ The current Go implementation is a functional `.mrg` image codec:
 - `mirage encode` reads PNG, JPEG, or PPM and writes `.mrg`
 - `mirage decode` reads `.mrg` and writes PNG
 - `.mrg` v1 headers match the 72-byte spec layout
-- payloads are CRC-protected and arithmetic-coded
+- payloads are CRC-protected and arithmetic-coded as factorized latent streams
 - TurboQuant encodes one 4x4 RGB patch as one 48-coordinate latent vector
+- `c_coords` payloads encode unpacked TurboQuant coordinate symbols with either
+  categorical or bit-plane factorization
 - `q_norm` stores one log-space norm byte per latent position
+- `c_norms` payloads encode q_norm symbols independently from coordinate
+  symbols
 
 This is deliberately the host-side executable slice. It proves the bitstream,
 shared arithmetic coder, q_norm representation, TurboQuant latent contract, and
 CLI path without blocking on Manta's convolution/autograd/WebGPU work.
+
+The arithmetic coder also exposes `EncodeSymbolsWithModels`,
+`DecodeSymbolsWithModels`, `CDFsFromProbabilities`, `CDFsFromLogits`, and
+`NormCDFsFromLogNormalParams`. `EncodeLatentPayloadsWithModels` accepts per-symbol
+CDF sequences for categorical coordinates, bit-plane coordinates, and q_norm
+symbols. Those are the hard v1 host hooks for Manta-produced probability
+tensors: the GPU path owns logits/probabilities and log-normal norm parameters,
+while Mirage owns deterministic range coding.
 
 ## Manta Surface Status
 
@@ -43,8 +55,8 @@ Remaining work to reach the publishable Balle 2018 result:
 - WebGPU device kernels promoted from host-reference execution
 - full generic autograd for rate-distortion training
 - production `.mll` artifacts that replace the Go patch model fingerprint
-- hyperprior synthesis and learned factorized codeword probabilities for real
-  entropy coding instead of the current uniform-byte executable model
+- hyperprior synthesis and production learned probabilities instead of the
+  current default uniform executable model
 
 The implementation boundary is intentional: the `.mrg` file substrate and host
 codec APIs live here, while the learned analysis/synthesis network belongs in

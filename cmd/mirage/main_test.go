@@ -32,3 +32,31 @@ func TestRunInitMantaWritesRunnableArtifact(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestParseFactorization(t *testing.T) {
+	tests := map[string]struct {
+		want    string
+		wantErr bool
+	}{
+		"categorical": {want: "categorical"},
+		"cat":         {want: "categorical"},
+		"bit-plane":   {want: "bit-plane"},
+		"bitplane":    {want: "bit-plane"},
+		"bad":         {wantErr: true},
+	}
+	for input, tc := range tests {
+		got, err := parseFactorization(input)
+		if tc.wantErr {
+			if err == nil {
+				t.Fatalf("parseFactorization(%q) succeeded", input)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("parseFactorization(%q): %v", input, err)
+		}
+		if got.String() != tc.want {
+			t.Fatalf("parseFactorization(%q) = %s want %s", input, got, tc.want)
+		}
+	}
+}

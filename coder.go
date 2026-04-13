@@ -141,6 +141,58 @@ func DecodeSymbols(data []byte, count int, model CDF) ([]uint16, error) {
 	return out, nil
 }
 
+// EncodeSymbolsWithModels arithmetic-codes symbols with one CDF per symbol.
+// This is the host-side boundary used by learned entropy models whose
+// probabilities vary by latent coordinate.
+func EncodeSymbolsWithModels(symbols []uint16, models []CDF) ([]byte, error) {
+	if len(symbols) != len(models) {
+		return nil, fmt.Errorf("mirage: symbol/model length mismatch %d != %d", len(symbols), len(models))
+	}
+	if len(symbols) == 0 {
+		return nil, nil
+	}
+	enc := arithmeticEncoder{
+		low:  0,
+		high: codeMax,
+	}
+	for i, sym16 := range symbols {
+		model := models[i]
+		if err := model.validate(); err != nil {
+			return nil, fmt.Errorf("mirage: model %d: %w", i, err)
+		}
+		sym := int(sym16)
+		if sym < 0 || sym >= len(model.Counts) {
+			return nil, fmt.Errorf("mirage: symbol %d outside CDF alphabet %d at %d", sym, len(model.Counts), i)
+		}
+		if model.Counts[sym] == 0 {
+			return nil, fmt.Errorf("mirage: symbol %d has zero probability at %d", sym, i)
+		}
+		enc.encode(uint64(model.Cumulative[sym]), uint64(model.Cumulative[sym+1]), uint64(model.Total))
+	}
+	return enc.finish(), nil
+}
+
+// DecodeSymbolsWithModels decodes exactly len(models) symbols with one CDF per
+// symbol. The model sequence must match the sequence used during encode.
+func DecodeSymbolsWithModels(data []byte, models []CDF) ([]uint16, error) {
+	if len(models) == 0 {
+		return nil, nil
+	}
+	dec := newArithmeticDecoder(data)
+	out := make([]uint16, len(models))
+	for i, model := range models {
+		if err := model.validate(); err != nil {
+			return nil, fmt.Errorf("mirage: model %d: %w", i, err)
+		}
+		sym, err := dec.decode(model)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = uint16(sym)
+	}
+	return out, nil
+}
+
 // EncodeBytes arithmetic-codes bytes with a uniform byte model. This is mainly
 // useful for smoke tests and payloads whose probability model is external.
 func EncodeBytes(data []byte) ([]byte, error) {

@@ -49,7 +49,7 @@ func main() {
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "usage:")
-	fmt.Fprintln(w, "  mirage encode -in image.png -out image.mrg [-bits 2|4|8]")
+	fmt.Fprintln(w, "  mirage encode -in image.png -out image.mrg [-bits 2|4|8] [-factorization categorical|bit-plane]")
 	fmt.Fprintln(w, "  mirage decode -in image.mrg -out image.png")
 	fmt.Fprintln(w, "  mirage info   -in image.mrg")
 	fmt.Fprintln(w, "  mirage eval   -source image.png -mrg image.mrg")
@@ -62,6 +62,7 @@ func runEncode(args []string) error {
 	in := fs.String("in", "", "input PNG, JPEG, or PPM")
 	out := fs.String("out", "", "output .mrg path")
 	bits := fs.Int("bits", 4, "TurboQuant bits per latent coordinate: 2, 4, or 8")
+	factorizationFlag := fs.String("factorization", "categorical", "coordinate entropy factorization: categorical or bit-plane")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -72,7 +73,11 @@ func runEncode(args []string) error {
 	if err != nil {
 		return err
 	}
-	encoded, format, err := mirage.EncodeImageReader(data, mirage.EncodeOptions{BitWidth: *bits})
+	factorization, err := parseFactorization(*factorizationFlag)
+	if err != nil {
+		return err
+	}
+	encoded, format, err := mirage.EncodeImageReader(data, mirage.EncodeOptions{BitWidth: *bits, Factorization: factorization})
 	if err != nil {
 		return err
 	}
@@ -86,6 +91,17 @@ func runEncode(args []string) error {
 	fmt.Printf("encoded %s -> %s\n", *in, *out)
 	fmt.Printf("source_format=%s bits=%d size=%d bpp=%.4f\n", format, *bits, len(encoded), mirage.BitsPerPixel(file))
 	return nil
+}
+
+func parseFactorization(value string) (mirage.Factorization, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "categorical", "cat":
+		return mirage.FactorizationCategorical, nil
+	case "bit-plane", "bitplane", "bit_plane", "bits":
+		return mirage.FactorizationBitPlane, nil
+	default:
+		return 0, fmt.Errorf("unknown factorization %q", value)
+	}
 }
 
 func runDecode(args []string) error {

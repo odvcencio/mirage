@@ -7,6 +7,10 @@ This workspace currently lands the executable host-side v1 path:
 
 - `.mrg` v1 fixed 72-byte headers, payload slicing, and CRC-32 validation
 - a deterministic 32-bit arithmetic coder shared by encoder and WASM decoder
+- factorized latent payload coding for TurboQuant categorical and bit-plane
+  coordinate streams plus q_norm streams
+- per-symbol learned entropy model hooks for Manta logits/probabilities and
+  log-normal q_norm parameters
 - q_norm log-space norm quantization
 - channel-first RGB image helpers with PNG, JPEG, and PPM support
 - a TurboQuant latent adapter that quantizes one spatial position as one vector
@@ -24,7 +28,8 @@ local module replaces in the standalone workspace.
 ## Quick Start
 
 ```bash
-go run ./cmd/mirage encode -in input.png -out input.mrg -bits 4
+go run ./cmd/mirage encode -in input.png -out input.mrg -bits 4 -factorization categorical
+go run ./cmd/mirage encode -in input.png -out input.bitplane.mrg -bits 4 -factorization bit-plane
 go run ./cmd/mirage info -in input.mrg
 go run ./cmd/mirage decode -in input.mrg -out decoded.png
 go run ./cmd/mirage eval -source input.png -mrg input.mrg
