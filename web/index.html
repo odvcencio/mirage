@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mirage Decoder</title>
+    <style>
+      :root {
+        --font-display: "Space Grotesk", "Work Sans", sans-serif;
+        --font-body: "Work Sans", sans-serif;
+        --font-mono: "IBM Plex Mono", monospace;
+        --type-xs: 0.694rem;
+        --type-sm: 0.833rem;
+        --type-md: 1rem;
+        --type-lg: 1.2rem;
+        --type-xl: 1.44rem;
+        --type-2xl: 1.728rem;
+        --type-3xl: 2.074rem;
+        --color-dominant: #ffffff;
+        --color-secondary: #f2f4f1;
+        --color-accent: #0b7a5a;
+        --color-text-primary: #101312;
+        --color-text-secondary: #3d4742;
+        --color-text-muted: #69746f;
+        --color-border: #cdd5cf;
+        --duration-fast: 150ms;
+        --duration-normal: 200ms;
+        --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --space-xs: 0.5rem;
+        --space-sm: 0.75rem;
+        --space-md: 1rem;
+        --space-lg: 1.5rem;
+        --space-xl: 2rem;
+        --space-2xl: 3rem;
+        --space-3xl: 4rem;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--font-body);
+        font-size: var(--type-md);
+        color: var(--color-text-primary);
+        background: var(--color-dominant);
+      }
+
+      main {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+
+      header,
+      footer {
+        padding: var(--space-lg);
+        border-bottom: 1px solid var(--color-border);
+      }
+
+      footer {
+        border-top: 1px solid var(--color-border);
+        border-bottom: 0;
+        color: var(--color-text-muted);
+        font-size: var(--type-sm);
+      }
+
+      h1 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: var(--type-3xl);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(18rem, 24rem) 1fr;
+        min-height: 0;
+      }
+
+      .panel {
+        padding: var(--space-lg);
+        background: var(--color-secondary);
+        border-right: 1px solid var(--color-border);
+      }
+
+      .drop {
+        display: grid;
+        gap: var(--space-md);
+        align-content: center;
+        min-height: 14rem;
+        padding: var(--space-lg);
+        border: 1px dashed var(--color-text-muted);
+        border-radius: 8px;
+        background: var(--color-dominant);
+        transition: border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+      }
+
+      .drop[data-active="true"] {
+        border-color: var(--color-accent);
+        transform: translateY(-1px);
+      }
+
+      button,
+      label {
+        cursor: pointer;
+      }
+
+      .file-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 2.5rem;
+        padding: var(--space-sm) var(--space-md);
+        border-radius: 8px;
+        border: 1px solid var(--color-accent);
+        color: var(--color-dominant);
+        background: var(--color-accent);
+        font-weight: 600;
+        transition: transform var(--duration-fast) var(--ease-spring), opacity var(--duration-fast) var(--ease-out);
+      }
+
+      .file-button:hover,
+      .file-button:focus-visible {
+        transform: translateY(-1px);
+      }
+
+      .file-button:active {
+        opacity: 0.82;
+      }
+
+      input[type="file"] {
+        position: absolute;
+        inline-size: 1px;
+        block-size: 1px;
+        opacity: 0;
+      }
+
+      .status {
+        margin-block-start: var(--space-md);
+        font-family: var(--font-mono);
+        font-size: var(--type-sm);
+        color: var(--color-text-secondary);
+        overflow-wrap: anywhere;
+      }
+
+      .canvas-wrap {
+        display: grid;
+        place-items: center;
+        min-width: 0;
+        min-height: 0;
+        padding: var(--space-lg);
+      }
+
+      canvas {
+        max-width: 100%;
+        max-height: calc(100vh - 12rem);
+        image-rendering: auto;
+        border: 1px solid var(--color-border);
+        background: var(--color-secondary);
+      }
+
+      @media (max-width: 760px) {
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .panel {
+          border-right: 0;
+          border-bottom: 1px solid var(--color-border);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition-duration: 1ms;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Mirage Decoder</h1>
+      </header>
+      <section class="workspace" aria-label="Mirage decode workspace">
+        <aside class="panel">
+          <div id="drop" class="drop">
+            <strong>Drop a .mrg file</strong>
+            <span>Decode runs locally through Go WASM.</span>
+            <label class="file-button" for="file">Choose file</label>
+            <input id="file" type="file" accept=".mrg" />
+          </div>
+          <div id="status" class="status" role="status">Waiting for runtime.</div>
+        </aside>
+        <div class="canvas-wrap">
+          <canvas id="canvas" width="640" height="360" aria-label="Decoded Mirage image"></canvas>
+        </div>
+      </section>
+      <footer>Mirage Image v1</footer>
+    </main>
+    <script src="wasm_exec.js"></script>
+    <script>
+      const statusEl = document.querySelector("#status");
+      const fileEl = document.querySelector("#file");
+      const dropEl = document.querySelector("#drop");
+      const canvas = document.querySelector("#canvas");
+      const ctx = canvas.getContext("2d");
+
+      function setStatus(text) {
+        statusEl.textContent = text;
+      }
+
+      async function loadRuntime() {
+        if (!WebAssembly.instantiateStreaming) {
+          setStatus("WebAssembly streaming is unavailable.");
+          return;
+        }
+        const go = new Go();
+        const result = await WebAssembly.instantiateStreaming(fetch("mirage.wasm"), go.importObject);
+        go.run(result.instance);
+        setStatus("Ready.");
+      }
+
+      async function decodeFile(file) {
+        setStatus(`Decoding ${file.name}`);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const result = globalThis.mirageDecode(bytes);
+        if (!result.ok) {
+          setStatus(result.error);
+          return;
+        }
+        canvas.width = result.width;
+        canvas.height = result.height;
+        const image = new ImageData(result.rgba, result.width, result.height);
+        ctx.putImageData(image, 0, 0);
+        setStatus(`${file.name} ${result.width}x${result.height}`);
+      }
+
+      fileEl.addEventListener("change", () => {
+        const [file] = fileEl.files;
+        if (file) decodeFile(file);
+      });
+
+      for (const eventName of ["dragenter", "dragover"]) {
+        dropEl.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          dropEl.dataset.active = "true";
+        });
+      }
+
+      for (const eventName of ["dragleave", "drop"]) {
+        dropEl.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          dropEl.dataset.active = "false";
+        });
+      }
+
+      dropEl.addEventListener("drop", (event) => {
+        const [file] = event.dataTransfer.files;
+        if (file) decodeFile(file);
+      });
+
+      loadRuntime().catch((error) => setStatus(error.message));
+    </script>
+  </body>
+</html>

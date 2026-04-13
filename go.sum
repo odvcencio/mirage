@@ -1,0 +1,10 @@
+github.com/klauspost/cpuid/v2 v2.0.9 h1:lgaqFMSdTdQYdZ04uHyN2d/eKdOMyi2YLSvlQIBFYa4=
+github.com/klauspost/cpuid/v2 v2.0.9/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
+github.com/odvcencio/manta v0.0.14-0.20260413093031-2c58c2882b0d h1:UWSnoM2upxzVRikdujoqRc5+JCCn9GHgGV1x0R3kFEg=
+github.com/odvcencio/manta v0.0.14-0.20260413093031-2c58c2882b0d/go.mod h1:XRkh30bXJXtbvg3kbUACfx3ErZy/A4m+nkqI7HmdRSo=
+github.com/odvcencio/mll v0.0.1 h1:rmsQoXQu3EnKLsoeX+q/w2XaPxoSKIZq2QJhG4lUO8E=
+github.com/odvcencio/mll v0.0.1/go.mod h1:Yjspjp/u0/Yap+hoDkJyJxjuyhFWcmLLJksgLi4WTWA=
+github.com/odvcencio/turboquant v0.1.0 h1:4dk7zt+T3Lu+jhqzTVQvFj77mrgDZ+ZzYIY5sUaz+qo=
+github.com/odvcencio/turboquant v0.1.0/go.mod h1:ty5h3EkX85p64iBnvWzUGvDuRr6kplOcCE2KBZLtAf8=
+lukechampine.com/blake3 v1.4.1 h1:I3Smz7gso8w4/TunLKec6K2fn+kyKtDxr/xcQEN84Wg=
+lukechampine.com/blake3 v1.4.1/go.mod h1:QFosUxmjB8mnrWFSNwKmvxHpfY72bmD2tQ0kBMM3kwo=

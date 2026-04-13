@@ -1,0 +1,9 @@
+.DS_Store
+*.mrg
+*.mll
+*.wasm
+web/mirage.wasm
+web/wasm_exec.js
+tmp/
+dist/
+coverage.out
