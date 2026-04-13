@@ -55,6 +55,10 @@ schema and host-reference runtime form:
 - `mirage train-manta-kodak` walks a real image directory, selects a bounded
   subset, runs a lambda sweep through the same reference autograd path, and
   writes one `.mll` module plus one `.weights.mll` checkpoint per lambda
+- `train-manta-kodak` supports `-crop-mode random`,
+  `-random-crops-per-image`, `-crop-seed`, and `-resume` so longer reference
+  runs can train on many deterministic random crops and continue from an
+  existing `.weights.mll` checkpoint
 - `mirage encode`, `mirage decode`, and `mirage eval` accept
   `-manta-module` plus `-manta-weights` to run the learned Manta deployment
   path: `analyze`, arithmetic-coded `c_z`, hyperprior synthesis,
@@ -119,6 +123,25 @@ relaxation at lambda 0.1 diverged to `+Inf`; `clip=1` stayed finite but increase
 rate to `30536.723`; `clip=5` with a 10x lower learning rate stayed finite but
 ended at MSE `0.063768` and rate `25066.537`. The next blocker is optimizer /
 surrogate calibration for high-lambda rate pressure, not CUDA backward kernels.
+
+The next baseline is a single middle-lambda run over all 24 Kodak images:
+
+```bash
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 24 \
+  -steps 5000 \
+  -crop 256 \
+  -lambdas 0.01 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -out-dir /tmp/mirage-kodak-runs/long-baseline
+```
+
+This intentionally keeps the current center-crop regime so it answers one
+question cleanly: whether the existing 4-bit x 16-latent x 8-hyper model reaches
+a meaningful operating point when trained for long enough.
 
 ## Deployment Round Trip
 

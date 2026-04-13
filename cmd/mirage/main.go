@@ -499,6 +499,10 @@ func runTrainMantaKodak(args []string) error {
 	weightDecay := fs.Float64("weight-decay", 0, "SGD weight decay")
 	modelSeed := fs.Int64("model-seed", 0, "Manta graph seed")
 	weightSeed := fs.Int64("weight-seed", 7, "deterministic weight initialization seed")
+	cropMode := fs.String("crop-mode", "center", "training crop mode: center or random")
+	randomCrops := fs.Int("random-crops-per-image", 1, "random crops to materialize per decoded image when -crop-mode random")
+	cropSeed := fs.Int64("crop-seed", 0, "deterministic random crop seed")
+	resumePath := fs.String("resume", "", "optional .weights.mll checkpoint to resume from")
 	outDir := fs.String("out-dir", "", "optional directory for .mll modules, .weights.mll checkpoints, and summary.json")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON summary")
 	if err := fs.Parse(args); err != nil {
@@ -566,7 +570,11 @@ func runTrainMantaKodak(args []string) error {
 			GradientClip:   float32(*clip),
 			WeightDecay:    float32(*weightDecay),
 			CropSize:       *crop,
+			CropMode:       *cropMode,
+			RandomCrops:    *randomCrops,
+			CropSeed:       *cropSeed,
 			WeightSeed:     *weightSeed,
+			ResumePath:     *resumePath,
 			CheckpointPath: checkpointPath,
 		})
 		if err != nil {
@@ -582,6 +590,10 @@ func runTrainMantaKodak(args []string) error {
 			HyperChannels:  result.HyperChannels,
 			BitWidth:       result.BitWidth,
 			Factorization:  result.Factorization.String(),
+			CropMode:       result.CropMode,
+			TrainingCrops:  result.TrainingCrops,
+			RandomCrops:    result.RandomCrops,
+			CropSeed:       result.CropSeed,
 			InitialLoss:    result.InitialLoss,
 			FinalLoss:      result.FinalLoss,
 			DeltaLoss:      result.InitialLoss - result.FinalLoss,
@@ -590,6 +602,7 @@ func runTrainMantaKodak(args []string) error {
 			InitialRate:    result.InitialRate,
 			FinalRate:      result.FinalRate,
 			Duration:       time.Since(start).String(),
+			ResumePath:     result.ResumePath,
 			ModulePath:     modulePath,
 			CheckpointPath: result.CheckpointPath,
 		}
@@ -599,11 +612,13 @@ func runTrainMantaKodak(args []string) error {
 		}
 		summary.Runs = append(summary.Runs, run)
 		if !*jsonOut {
-			fmt.Printf("lambda=%.6g images=%d crop=%dx%d steps=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f grad_analysis=%.6f->%.6f grad_total=%.6f->%.6f duration=%s\n",
+			fmt.Printf("lambda=%.6g images=%d training_crops=%d crop=%dx%d crop_mode=%s steps=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f grad_analysis=%.6f->%.6f grad_total=%.6f->%.6f duration=%s\n",
 				run.Lambda,
 				run.Images,
+				run.TrainingCrops,
 				run.CropWidth,
 				run.CropHeight,
+				run.CropMode,
 				run.Steps,
 				run.InitialLoss,
 				run.FinalLoss,
@@ -935,6 +950,10 @@ type trainMantaKodakRun struct {
 	HyperChannels      int                     `json:"hyper_channels"`
 	BitWidth           int                     `json:"bit_width"`
 	Factorization      string                  `json:"factorization"`
+	CropMode           string                  `json:"crop_mode"`
+	TrainingCrops      int                     `json:"training_crops"`
+	RandomCrops        int                     `json:"random_crops_per_image"`
+	CropSeed           int64                   `json:"crop_seed"`
 	InitialLoss        float32                 `json:"initial_loss"`
 	FinalLoss          float32                 `json:"final_loss"`
 	DeltaLoss          float32                 `json:"delta_loss"`
@@ -945,6 +964,7 @@ type trainMantaKodakRun struct {
 	FirstGradientNorms trainMantaGradientNorms `json:"first_gradient_norms"`
 	LastGradientNorms  trainMantaGradientNorms `json:"last_gradient_norms"`
 	Duration           string                  `json:"duration"`
+	ResumePath         string                  `json:"resume_path,omitempty"`
 	ModulePath         string                  `json:"module_path,omitempty"`
 	CheckpointPath     string                  `json:"checkpoint_path,omitempty"`
 }

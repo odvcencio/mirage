@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -67,7 +68,7 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 	for _, name := range []string{"kodim02.png", "kodim01.png"} {
 		path := filepath.Join(dir, name)
 		var encoded bytes.Buffer
-		if err := mirage.EncodePNG(&encoded, testTrainingImage(t, 32, 32)); err != nil {
+		if err := mirage.EncodePNG(&encoded, testTrainingImage(t, 48, 48)); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(path, encoded.Bytes(), 0o644); err != nil {
@@ -80,6 +81,9 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 		"-max-images", "1",
 		"-steps", "1",
 		"-crop", "32",
+		"-crop-mode", "random",
+		"-random-crops-per-image", "2",
+		"-crop-seed", "99",
 		"-lambdas", "0.001,0.01",
 		"-bits", "2",
 		"-latent-channels", "4",
@@ -112,6 +116,26 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 	}
 	if got, want := entry.Inputs[0].Type.Tensor.Shape, []string{"1", "3", "32", "32"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("analyze input shape = %v want %v", got, want)
+	}
+	data, err := os.ReadFile(filepath.Join(outDir, "summary.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary trainMantaKodakSummary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Runs) != 2 {
+		t.Fatalf("summary runs = %d want 2", len(summary.Runs))
+	}
+	if got := summary.Runs[0].CropMode; got != "random" {
+		t.Fatalf("crop mode = %q want random", got)
+	}
+	if got := summary.Runs[0].TrainingCrops; got != 2 {
+		t.Fatalf("training crops = %d want 2", got)
+	}
+	if got := summary.Runs[0].CropSeed; got != 99 {
+		t.Fatalf("crop seed = %d want 99", got)
 	}
 }
 

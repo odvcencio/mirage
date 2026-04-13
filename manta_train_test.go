@@ -4,6 +4,7 @@ package mirage
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 )
 
@@ -66,6 +67,54 @@ func TestTrainMantaReferenceImagesRejectsSmallImage(t *testing.T) {
 	_, err := TrainMantaReferenceImages([]RGBImage{img}, MantaReferenceTrainOptions{CropSize: 16})
 	if err == nil {
 		t.Fatal("expected small image error")
+	}
+}
+
+func TestTrainMantaReferenceImagesRandomCropsAndResume(t *testing.T) {
+	img := mantaReferenceTrainPNGSource(t, 32, 32)
+	dir := t.TempDir()
+	checkpointPath := filepath.Join(dir, "checkpoint.weights.mll")
+	result, err := TrainMantaReferenceImages([]RGBImage{img}, MantaReferenceTrainOptions{
+		Config: MantaConfig{
+			LatentChannels: 4,
+			HyperChannels:  4,
+			BitWidth:       2,
+			Lambda:         0.001,
+		},
+		Steps:          1,
+		LearningRate:   0.02,
+		GradientClip:   0.5,
+		CropSize:       16,
+		CropMode:       "random",
+		RandomCrops:    3,
+		CropSeed:       11,
+		WeightSeed:     7,
+		CheckpointPath: checkpointPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CropMode != "random" || result.TrainingCrops != 3 || result.RandomCrops != 3 || result.CropSeed != 11 {
+		t.Fatalf("unexpected random crop metadata: %+v", result)
+	}
+	resumed, err := TrainMantaReferenceImages([]RGBImage{img}, MantaReferenceTrainOptions{
+		Config: MantaConfig{
+			LatentChannels: 4,
+			HyperChannels:  4,
+			BitWidth:       2,
+			Lambda:         0.001,
+		},
+		Steps:        1,
+		LearningRate: 0.02,
+		GradientClip: 0.5,
+		CropSize:     16,
+		ResumePath:   checkpointPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.ResumePath != checkpointPath {
+		t.Fatalf("resume path = %q want %q", resumed.ResumePath, checkpointPath)
 	}
 }
 
