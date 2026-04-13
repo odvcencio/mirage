@@ -56,8 +56,8 @@ func main() {
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "usage:")
-	fmt.Fprintln(w, "  mirage encode -in image.png -out image.mrg [-bits 2|4|8] [-factorization categorical|bit-plane]")
-	fmt.Fprintln(w, "  mirage decode -in image.mrg -out image.png")
+	fmt.Fprintln(w, "  mirage encode -in image.png -out image.mrg [-bits 2|4|8] [-factorization categorical|bit-plane] [-manta-module model.mll -manta-weights model.weights.mll]")
+	fmt.Fprintln(w, "  mirage decode -in image.mrg -out image.png [-manta-module model.mll -manta-weights model.weights.mll]")
 	fmt.Fprintln(w, "  mirage info   -in image.mrg")
 	fmt.Fprintln(w, "  mirage eval   -source image.png -mrg image.mrg")
 	fmt.Fprintln(w, "  mirage init-manta -out mirage_v1.mll [-bits 2|4|8]")
@@ -72,6 +72,8 @@ func runEncode(args []string) error {
 	out := fs.String("out", "", "output .mrg path")
 	bits := fs.Int("bits", 4, "TurboQuant bits per latent coordinate: 2, 4, or 8")
 	factorizationFlag := fs.String("factorization", "categorical", "coordinate entropy factorization: categorical or bit-plane")
+	mantaModule := fs.String("manta-module", "", "Manta Mirage v1 .mll module for learned encode")
+	mantaWeights := fs.String("manta-weights", "", "Manta Mirage v1 .weights.mll file for learned encode")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -85,6 +87,36 @@ func runEncode(args []string) error {
 	factorization, err := parseFactorization(*factorizationFlag)
 	if err != nil {
 		return err
+	}
+	if *mantaModule != "" || *mantaWeights != "" {
+		if *mantaModule == "" || *mantaWeights == "" {
+			return fmt.Errorf("encode requires both -manta-module and -manta-weights")
+		}
+		img, format, err := mirage.DecodeImage(bytesReader(data))
+		if err != nil {
+			return err
+		}
+		codec, err := mirage.LoadMantaCodec(context.Background(), mirage.MantaCodecOptions{
+			ModulePath: *mantaModule,
+			WeightPath: *mantaWeights,
+		})
+		if err != nil {
+			return err
+		}
+		file, err := codec.Encode(context.Background(), img)
+		if err != nil {
+			return err
+		}
+		encoded, err := file.MarshalBinary()
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(*out, encoded, 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("encoded %s -> %s\n", *in, *out)
+		fmt.Printf("source_format=%s model=manta image=%dx%d bits=%d size=%d bpp=%.4f\n", format, file.Header.ImageWidth, file.Header.ImageHeight, file.Header.BitWidth, len(encoded), mirage.BitsPerPixel(file))
+		return nil
 	}
 	encoded, format, err := mirage.EncodeImageReader(data, mirage.EncodeOptions{BitWidth: *bits, Factorization: factorization})
 	if err != nil {
@@ -117,6 +149,9 @@ func runDecode(args []string) error {
 	fs := flag.NewFlagSet("decode", flag.ExitOnError)
 	in := fs.String("in", "", "input .mrg path")
 	out := fs.String("out", "", "output PNG path")
+	mantaModule := fs.String("manta-module", "", "Manta Mirage v1 .mll module for learned decode")
+	mantaWeights := fs.String("manta-weights", "", "Manta Mirage v1 .weights.mll file for learned decode")
+	allowMismatch := fs.Bool("allow-model-mismatch", false, "allow Manta module fingerprint mismatch")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -127,9 +162,32 @@ func runDecode(args []string) error {
 	if err != nil {
 		return err
 	}
-	img, err := mirage.DecodeBytesMRG(data, mirage.DefaultDecodeOptions())
-	if err != nil {
-		return err
+	var img mirage.RGBImage
+	if *mantaModule != "" || *mantaWeights != "" {
+		if *mantaModule == "" || *mantaWeights == "" {
+			return fmt.Errorf("decode requires both -manta-module and -manta-weights")
+		}
+		file, err := mirage.ParseFile(data)
+		if err != nil {
+			return err
+		}
+		codec, err := mirage.LoadMantaCodec(context.Background(), mirage.MantaCodecOptions{
+			ModulePath:         *mantaModule,
+			WeightPath:         *mantaWeights,
+			AllowModelMismatch: *allowMismatch,
+		})
+		if err != nil {
+			return err
+		}
+		img, err = codec.Decode(context.Background(), file)
+		if err != nil {
+			return err
+		}
+	} else {
+		img, err = mirage.DecodeBytesMRG(data, mirage.DefaultDecodeOptions())
+		if err != nil {
+			return err
+		}
 	}
 	f, err := os.Create(*out)
 	if err != nil {
@@ -178,6 +236,9 @@ func runEval(args []string) error {
 	fs := flag.NewFlagSet("eval", flag.ExitOnError)
 	sourcePath := fs.String("source", "", "source PNG, JPEG, or PPM")
 	mrgPath := fs.String("mrg", "", "Mirage .mrg file")
+	mantaModule := fs.String("manta-module", "", "Manta Mirage v1 .mll module for learned decode")
+	mantaWeights := fs.String("manta-weights", "", "Manta Mirage v1 .weights.mll file for learned decode")
+	allowMismatch := fs.Bool("allow-model-mismatch", false, "allow Manta module fingerprint mismatch")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -200,9 +261,34 @@ func runEval(args []string) error {
 	if err != nil {
 		return err
 	}
-	decoded, err := mirage.Decode(file, mirage.DefaultDecodeOptions())
-	if err != nil {
-		return err
+	var decoded mirage.RGBImage
+	if *mantaModule != "" || *mantaWeights != "" {
+		if *mantaModule == "" || *mantaWeights == "" {
+			return fmt.Errorf("eval requires both -manta-module and -manta-weights")
+		}
+		codec, err := mirage.LoadMantaCodec(context.Background(), mirage.MantaCodecOptions{
+			ModulePath:         *mantaModule,
+			WeightPath:         *mantaWeights,
+			AllowModelMismatch: *allowMismatch,
+		})
+		if err != nil {
+			return err
+		}
+		decoded, err = codec.Decode(context.Background(), file)
+		if err != nil {
+			return err
+		}
+		if source.Width != decoded.Width || source.Height != decoded.Height {
+			source, err = mirage.CenterCropRGB(source, decoded.Width, decoded.Height)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		decoded, err = mirage.Decode(file, mirage.DefaultDecodeOptions())
+		if err != nil {
+			return err
+		}
 	}
 	mse, err := mirage.MSE(source, decoded)
 	if err != nil {
@@ -461,6 +547,7 @@ func runTrainMantaKodak(args []string) error {
 			Factorization:  factorization,
 			Lambda:         lambda,
 		}
+		cfg = normalizeMantaCLIConfig(cfg, *crop)
 		checkpointPath := ""
 		modulePath := ""
 		if *outDir != "" {
@@ -548,6 +635,34 @@ func runTrainMantaKodak(args []string) error {
 		return enc.Encode(summary)
 	}
 	return nil
+}
+
+func normalizeMantaCLIConfig(cfg mirage.MantaConfig, crop int) mirage.MantaConfig {
+	if crop <= 0 {
+		crop = 16
+	}
+	if cfg.ImageChannels == 0 {
+		cfg.ImageChannels = 3
+	}
+	if cfg.ImageWidth == 0 {
+		cfg.ImageWidth = crop
+	}
+	if cfg.ImageHeight == 0 {
+		cfg.ImageHeight = crop
+	}
+	if cfg.LatentChannels == 0 {
+		cfg.LatentChannels = 4
+	}
+	if cfg.HyperChannels == 0 {
+		cfg.HyperChannels = cfg.LatentChannels
+	}
+	if cfg.BitWidth == 0 {
+		cfg.BitWidth = 2
+	}
+	if cfg.Lambda == 0 {
+		cfg.Lambda = 0.001
+	}
+	return cfg
 }
 
 func bytesReader(data []byte) io.Reader {

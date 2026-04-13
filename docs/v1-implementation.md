@@ -55,6 +55,10 @@ schema and host-reference runtime form:
 - `mirage train-manta-kodak` walks a real image directory, selects a bounded
   subset, runs a lambda sweep through the same reference autograd path, and
   writes one `.mll` module plus one `.weights.mll` checkpoint per lambda
+- `mirage encode`, `mirage decode`, and `mirage eval` accept
+  `-manta-module` plus `-manta-weights` to run the learned Manta deployment
+  path: `analyze`, arithmetic-coded `c_z`, hyperprior synthesis,
+  conditional `c_coords` / `c_norms`, and `synthesize_image`
 
 Remaining work to reach the publishable Balle 2018 result:
 
@@ -62,9 +66,8 @@ Remaining work to reach the publishable Balle 2018 result:
 - WebGPU device kernels promoted from host-reference execution
 - dataset loading, batching, optimizer calibration, and metric sweeps beyond the
   current Kodak subset reference gate
-- production `.mll` artifacts that replace the Go patch model fingerprint
-- hyperprior synthesis and production learned probabilities instead of the
-  current default uniform executable model
+- longer reference and accelerated training runs that produce publishable
+  rate-distortion checkpoints
 
 The implementation boundary is intentional: the `.mrg` file substrate and host
 codec APIs live here, while the learned analysis/synthesis network belongs in
@@ -116,6 +119,49 @@ relaxation at lambda 0.1 diverged to `+Inf`; `clip=1` stayed finite but increase
 rate to `30536.723`; `clip=5` with a 10x lower learning rate stayed finite but
 ended at MSE `0.063768` and rate `25066.537`. The next blocker is optimizer /
 surrogate calibration for high-lambda rate pressure, not CUDA backward kernels.
+
+## Deployment Round Trip
+
+The first learned-codec deployment round trip now loads checkpointed
+`.weights.mll` files, runs Manta `analyze`, converts Manta logits and log-normal
+norm parameters into per-symbol arithmetic CDFs, writes real `.mrg` payloads,
+decodes through `synthesize_hyperprior` and `synthesize_image`, and measures
+container bpp plus PSNR.
+
+The diagnostic also fixed the `train-manta-kodak -out-dir` artifact writer: it
+now emits modules after CLI shape normalization, so `-crop 256` produces a
+256x256 `.mll` rather than the 16x16 default artifact.
+
+Command shape used for the 2026-04-13 checkpoint diagnostic:
+
+```bash
+mirage encode \
+  -in /tmp/mirage-kodak/kodim01.png \
+  -out /tmp/mirage-roundtrip/lambda-0p001.mrg \
+  -manta-module /tmp/mirage-roundtrip/modules/lambda-0p001-256.mll \
+  -manta-weights /tmp/mirage-kodak-runs/capacity/lambda-0p001/mirage_v1_lambda_0p001.weights.mll
+
+mirage eval \
+  -source /tmp/mirage-kodak/kodim01.png \
+  -mrg /tmp/mirage-roundtrip/lambda-0p001.mrg \
+  -manta-module /tmp/mirage-roundtrip/modules/lambda-0p001-256.mll \
+  -manta-weights /tmp/mirage-kodak-runs/capacity/lambda-0p001/mirage_v1_lambda_0p001.weights.mll
+```
+
+Real `.mrg` measurements on the 256x256 center crop of `kodim01.png`:
+
+| lambda | training rate end | container bytes | bpp | PSNR |
+|---:|---:|---:|---:|---:|
+| 0.001 | 20617.531 | 2965 | 0.3619 | 14.9001 |
+| 0.01 | 27497.906 | 3780 | 0.4614 | 14.9008 |
+| 0.1 | 24869.295 | 3447 | 0.4208 | 14.9009 |
+
+This rules out the "training metric is inverted" branch. The real `.mrg` rate
+tracks the training proxy direction: the low-lambda checkpoint has lower real
+bpp than the high-lambda checkpoint, while PSNR is effectively identical. The
+remaining blocker is therefore training dynamics / surrogate bias causing
+high-lambda optimization to produce a worse entropy model, not a deployment
+measurement mismatch.
 
 ## Visual System
 

@@ -45,6 +45,33 @@ func (img RGBImage) offset(c, y, x int) int {
 	return c*img.Width*img.Height + y*img.Width + x
 }
 
+// CenterCropRGB returns the centered width x height crop of an RGB image.
+func CenterCropRGB(img RGBImage, width, height int) (RGBImage, error) {
+	if err := img.validate(); err != nil {
+		return RGBImage{}, err
+	}
+	if width <= 0 || height <= 0 {
+		return RGBImage{}, fmt.Errorf("mirage: crop dimensions must be positive")
+	}
+	if img.Width < width || img.Height < height {
+		return RGBImage{}, fmt.Errorf("mirage: image %dx%d is smaller than requested crop %dx%d", img.Width, img.Height, width, height)
+	}
+	out, err := NewRGBImage(width, height)
+	if err != nil {
+		return RGBImage{}, err
+	}
+	x0 := (img.Width - width) / 2
+	y0 := (img.Height - height) / 2
+	for c := 0; c < 3; c++ {
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				out.Pix[out.offset(c, y, x)] = img.Pix[img.offset(c, y0+y, x0+x)]
+			}
+		}
+	}
+	return out, nil
+}
+
 // DecodeImage reads PNG, JPEG, or binary PPM (P6) into a channel-first RGBImage.
 func DecodeImage(r io.Reader) (RGBImage, string, error) {
 	data, err := io.ReadAll(r)

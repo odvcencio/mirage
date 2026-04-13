@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	mantaartifact "github.com/odvcencio/manta/artifact/manta"
@@ -66,7 +67,7 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 	for _, name := range []string{"kodim02.png", "kodim01.png"} {
 		path := filepath.Join(dir, name)
 		var encoded bytes.Buffer
-		if err := mirage.EncodePNG(&encoded, testTrainingImage(t, 16, 16)); err != nil {
+		if err := mirage.EncodePNG(&encoded, testTrainingImage(t, 32, 32)); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(path, encoded.Bytes(), 0o644); err != nil {
@@ -77,8 +78,8 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 	if err := runTrainMantaKodak([]string{
 		"-dir", dir,
 		"-max-images", "1",
-		"-steps", "2",
-		"-crop", "16",
+		"-steps", "1",
+		"-crop", "32",
 		"-lambdas", "0.001,0.01",
 		"-bits", "2",
 		"-latent-channels", "4",
@@ -97,6 +98,20 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected output %s: %v", path, err)
 		}
+	}
+	mod, err := mantaartifact.ReadFile(filepath.Join(outDir, "mirage_v1_lambda_0p001.mll"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := mantaEntryByName(mod, "analyze")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entry.Inputs) != 1 || entry.Inputs[0].Type.Tensor == nil {
+		t.Fatalf("unexpected analyze inputs: %+v", entry.Inputs)
+	}
+	if got, want := entry.Inputs[0].Type.Tensor.Shape, []string{"1", "3", "32", "32"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("analyze input shape = %v want %v", got, want)
 	}
 }
 

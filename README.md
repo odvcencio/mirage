@@ -20,6 +20,8 @@ This workspace currently lands the executable host-side v1 path:
 - a Manta import path that exports the Mirage Image v1 `.mll` operator surface
 - an image-backed Manta reference training smoke that runs the Mirage v1
   rate-distortion graph through Manta `ExecuteAutograd`
+- a learned Manta checkpoint path for `mirage encode`, `mirage decode`, and
+  `mirage eval` via `-manta-module` and `-manta-weights`
 
 The learned-codec pieces from the spec live in Manta. This repo now imports the
 sibling Manta module for the v1 artifact builder, while the standalone
@@ -39,6 +41,8 @@ go run ./cmd/mirage init-manta -out mirage_v1.mll
 go run ./cmd/mirage check-manta -in mirage_v1.mll -entry train_step
 go run ./cmd/mirage train-manta-smoke -in input.png -steps 24 -crop 16 -bits 2
 go run ./cmd/mirage train-manta-kodak -dir kodak -max-images 5 -steps 200 -crop 256 -lambdas 0.001,0.01,0.1 -out-dir runs/kodak-reference
+go run ./cmd/mirage encode -in input.png -out learned.mrg -manta-module runs/kodak-reference/mirage_v1_lambda_0p001.mll -manta-weights runs/kodak-reference/mirage_v1_lambda_0p001.weights.mll
+go run ./cmd/mirage eval -source input.png -mrg learned.mrg -manta-module runs/kodak-reference/mirage_v1_lambda_0p001.mll -manta-weights runs/kodak-reference/mirage_v1_lambda_0p001.weights.mll
 ```
 
 Build the browser decoder assets:
