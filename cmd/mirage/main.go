@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	mantaartifact "github.com/odvcencio/manta/artifact/manta"
 	mantaruntime "github.com/odvcencio/manta/runtime"
@@ -39,6 +42,8 @@ func main() {
 		err = runCheckManta(os.Args[2:])
 	case "train-manta-smoke":
 		err = runTrainMantaSmoke(os.Args[2:])
+	case "train-manta-kodak":
+		err = runTrainMantaKodak(os.Args[2:])
 	default:
 		usage(os.Stderr)
 		os.Exit(2)
@@ -58,6 +63,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  mirage init-manta -out mirage_v1.mll [-bits 2|4|8]")
 	fmt.Fprintln(w, "  mirage check-manta -in mirage_v1.mll [-entry train_step]")
 	fmt.Fprintln(w, "  mirage train-manta-smoke -in image.png [-in image2.png] [-steps 24] [-crop 16]")
+	fmt.Fprintln(w, "  mirage train-manta-kodak -dir kodak [-max-images 5] [-steps 200] [-crop 256] [-lambdas 0.001,0.01,0.1]")
 }
 
 func runEncode(args []string) error {
@@ -386,6 +392,156 @@ func runTrainMantaSmoke(args []string) error {
 	return nil
 }
 
+func runTrainMantaKodak(args []string) error {
+	fs := flag.NewFlagSet("train-manta-kodak", flag.ExitOnError)
+	var inputs stringListFlag
+	var dirs stringListFlag
+	fs.Var(&inputs, "in", "input PNG, JPEG, or PPM; repeat or comma-separate")
+	fs.Var(&dirs, "dir", "directory of PNG, JPEG, or PPM images; repeat or comma-separate")
+	maxImages := fs.Int("max-images", 5, "maximum decoded images to train on; <=0 means all")
+	steps := fs.Int("steps", 200, "reference SGD steps per lambda")
+	crop := fs.Int("crop", 256, "center crop size")
+	width := fs.Int("width", 0, "center crop width; defaults to -crop")
+	height := fs.Int("height", 0, "center crop height; defaults to -crop")
+	latentChannels := fs.Int("latent-channels", 4, "latent channels")
+	hyperChannels := fs.Int("hyper-channels", 0, "hyperprior channels; defaults to latent channels")
+	bits := fs.Int("bits", 2, "TurboQuant bits per latent coordinate: 2, 4, or 8")
+	lambdaList := fs.String("lambdas", "0.001,0.01,0.1", "comma-separated lambda sweep")
+	factorizationFlag := fs.String("factorization", "categorical", "coordinate entropy factorization: categorical or bit-plane")
+	lr := fs.Float64("lr", 0.02, "reference SGD learning rate")
+	clip := fs.Float64("clip", 0.5, "gradient clipping threshold")
+	weightDecay := fs.Float64("weight-decay", 0, "SGD weight decay")
+	modelSeed := fs.Int64("model-seed", 0, "Manta graph seed")
+	weightSeed := fs.Int64("weight-seed", 7, "deterministic weight initialization seed")
+	outDir := fs.String("out-dir", "", "optional directory for .mll modules, .weights.mll checkpoints, and summary.json")
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON summary")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	paths, err := collectTrainingImagePaths(inputs, dirs)
+	if err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("train-manta-kodak requires at least one -in image or -dir")
+	}
+	if *maxImages > 0 && len(paths) > *maxImages {
+		paths = paths[:*maxImages]
+	}
+	images, formats, err := decodeTrainingImages(paths)
+	if err != nil {
+		return err
+	}
+	lambdas, err := parseFloat64List(*lambdaList)
+	if err != nil {
+		return err
+	}
+	factorization, err := parseFactorization(*factorizationFlag)
+	if err != nil {
+		return err
+	}
+	if *outDir != "" {
+		if err := os.MkdirAll(*outDir, 0o755); err != nil {
+			return err
+		}
+	}
+	summary := trainMantaKodakSummary{
+		Images:  append([]string(nil), paths...),
+		Formats: append([]string(nil), formats...),
+		Runs:    make([]trainMantaKodakRun, 0, len(lambdas)),
+	}
+	for _, lambda := range lambdas {
+		cfg := mirage.MantaConfig{
+			ImageWidth:     *width,
+			ImageHeight:    *height,
+			LatentChannels: *latentChannels,
+			HyperChannels:  *hyperChannels,
+			BitWidth:       *bits,
+			Seed:           *modelSeed,
+			Factorization:  factorization,
+			Lambda:         lambda,
+		}
+		checkpointPath := ""
+		modulePath := ""
+		if *outDir != "" {
+			label := lambdaPathLabel(lambda)
+			modulePath = filepath.Join(*outDir, "mirage_v1_lambda_"+label+".mll")
+			checkpointPath = filepath.Join(*outDir, "mirage_v1_lambda_"+label+".weights.mll")
+			if err := mirage.WriteMantaMLL(modulePath, cfg); err != nil {
+				return err
+			}
+		}
+		start := time.Now()
+		result, err := mirage.TrainMantaReferenceImages(images, mirage.MantaReferenceTrainOptions{
+			Config:         cfg,
+			Steps:          *steps,
+			LearningRate:   float32(*lr),
+			GradientClip:   float32(*clip),
+			WeightDecay:    float32(*weightDecay),
+			CropSize:       *crop,
+			WeightSeed:     *weightSeed,
+			CheckpointPath: checkpointPath,
+		})
+		if err != nil {
+			return err
+		}
+		run := trainMantaKodakRun{
+			Lambda:         lambda,
+			Images:         result.Images,
+			Steps:          result.Steps,
+			CropWidth:      result.ImageWidth,
+			CropHeight:     result.ImageHeight,
+			LatentChannels: result.LatentChannels,
+			HyperChannels:  result.HyperChannels,
+			BitWidth:       result.BitWidth,
+			Factorization:  result.Factorization.String(),
+			InitialLoss:    result.InitialLoss,
+			FinalLoss:      result.FinalLoss,
+			DeltaLoss:      result.InitialLoss - result.FinalLoss,
+			InitialMSE:     result.InitialMSE,
+			FinalMSE:       result.FinalMSE,
+			InitialRate:    result.InitialRate,
+			FinalRate:      result.FinalRate,
+			Duration:       time.Since(start).String(),
+			ModulePath:     modulePath,
+			CheckpointPath: result.CheckpointPath,
+		}
+		summary.Runs = append(summary.Runs, run)
+		if !*jsonOut {
+			fmt.Printf("lambda=%.6g images=%d crop=%dx%d steps=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f duration=%s\n",
+				run.Lambda,
+				run.Images,
+				run.CropWidth,
+				run.CropHeight,
+				run.Steps,
+				run.InitialLoss,
+				run.FinalLoss,
+				run.DeltaLoss,
+				run.InitialMSE,
+				run.FinalMSE,
+				run.InitialRate,
+				run.FinalRate,
+				run.Duration,
+			)
+		}
+	}
+	if *outDir != "" {
+		data, err := json.MarshalIndent(summary, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(*outDir, "summary.json"), append(data, '\n'), 0o644); err != nil {
+			return err
+		}
+	}
+	if *jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(summary)
+	}
+	return nil
+}
+
 func bytesReader(data []byte) io.Reader {
 	return bytes.NewReader(data)
 }
@@ -520,6 +676,98 @@ func sortStrings(values []string) {
 	}
 }
 
+func collectTrainingImagePaths(inputs, dirs []string) ([]string, error) {
+	seen := map[string]bool{}
+	var paths []string
+	add := func(path string) {
+		if path == "" || seen[path] {
+			return
+		}
+		seen[path] = true
+		paths = append(paths, path)
+	}
+	for _, path := range inputs {
+		add(path)
+	}
+	for _, dir := range dirs {
+		err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if isTrainingImagePath(path) {
+				add(path)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	sortStrings(paths)
+	return paths, nil
+}
+
+func isTrainingImagePath(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png", ".jpg", ".jpeg", ".ppm":
+		return true
+	default:
+		return false
+	}
+}
+
+func decodeTrainingImages(paths []string) ([]mirage.RGBImage, []string, error) {
+	images := make([]mirage.RGBImage, 0, len(paths))
+	formats := make([]string, 0, len(paths))
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, nil, err
+		}
+		img, format, decodeErr := mirage.DecodeImage(f)
+		closeErr := f.Close()
+		if decodeErr != nil {
+			return nil, nil, fmt.Errorf("%s: %w", path, decodeErr)
+		}
+		if closeErr != nil {
+			return nil, nil, closeErr
+		}
+		images = append(images, img)
+		formats = append(formats, format)
+	}
+	return images, formats, nil
+}
+
+func parseFloat64List(value string) ([]float64, error) {
+	var out []float64
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		parsed, err := strconv.ParseFloat(part, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid float %q", part)
+		}
+		out = append(out, parsed)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("at least one value is required")
+	}
+	return out, nil
+}
+
+func lambdaPathLabel(lambda float64) string {
+	label := strconv.FormatFloat(lambda, 'g', -1, 64)
+	label = strings.ReplaceAll(label, ".", "p")
+	label = strings.ReplaceAll(label, "-", "m")
+	label = strings.ReplaceAll(label, "+", "")
+	return label
+}
+
 type stringListFlag []string
 
 func (f *stringListFlag) String() string {
@@ -534,4 +782,32 @@ func (f *stringListFlag) Set(value string) error {
 		}
 	}
 	return nil
+}
+
+type trainMantaKodakSummary struct {
+	Images  []string             `json:"images"`
+	Formats []string             `json:"formats"`
+	Runs    []trainMantaKodakRun `json:"runs"`
+}
+
+type trainMantaKodakRun struct {
+	Lambda         float64 `json:"lambda"`
+	Images         int     `json:"images"`
+	Steps          int     `json:"steps"`
+	CropWidth      int     `json:"crop_width"`
+	CropHeight     int     `json:"crop_height"`
+	LatentChannels int     `json:"latent_channels"`
+	HyperChannels  int     `json:"hyper_channels"`
+	BitWidth       int     `json:"bit_width"`
+	Factorization  string  `json:"factorization"`
+	InitialLoss    float32 `json:"initial_loss"`
+	FinalLoss      float32 `json:"final_loss"`
+	DeltaLoss      float32 `json:"delta_loss"`
+	InitialMSE     float32 `json:"initial_mse"`
+	FinalMSE       float32 `json:"final_mse"`
+	InitialRate    float32 `json:"initial_rate"`
+	FinalRate      float32 `json:"final_rate"`
+	Duration       string  `json:"duration"`
+	ModulePath     string  `json:"module_path,omitempty"`
+	CheckpointPath string  `json:"checkpoint_path,omitempty"`
 }

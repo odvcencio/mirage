@@ -38,6 +38,7 @@ go run ./cmd/mirage eval -source input.png -mrg input.mrg
 go run ./cmd/mirage init-manta -out mirage_v1.mll
 go run ./cmd/mirage check-manta -in mirage_v1.mll -entry train_step
 go run ./cmd/mirage train-manta-smoke -in input.png -steps 24 -crop 16 -bits 2
+go run ./cmd/mirage train-manta-kodak -dir kodak -max-images 5 -steps 200 -crop 256 -lambdas 0.001,0.01,0.1 -out-dir runs/kodak-reference
 ```
 
 Build the browser decoder assets:

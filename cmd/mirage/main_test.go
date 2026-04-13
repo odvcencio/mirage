@@ -61,6 +61,45 @@ func TestRunTrainMantaSmokeUsesDecodedImageFile(t *testing.T) {
 	}
 }
 
+func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"kodim02.png", "kodim01.png"} {
+		path := filepath.Join(dir, name)
+		var encoded bytes.Buffer
+		if err := mirage.EncodePNG(&encoded, testTrainingImage(t, 16, 16)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, encoded.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outDir := filepath.Join(dir, "runs")
+	if err := runTrainMantaKodak([]string{
+		"-dir", dir,
+		"-max-images", "1",
+		"-steps", "2",
+		"-crop", "16",
+		"-lambdas", "0.001,0.01",
+		"-bits", "2",
+		"-latent-channels", "4",
+		"-hyper-channels", "4",
+		"-out-dir", outDir,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(outDir, "summary.json"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p001.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p001.weights.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p01.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p01.weights.mll"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected output %s: %v", path, err)
+		}
+	}
+}
+
 func TestParseFactorization(t *testing.T) {
 	tests := map[string]struct {
 		want    string
@@ -87,4 +126,33 @@ func TestParseFactorization(t *testing.T) {
 			t.Fatalf("parseFactorization(%q) = %s want %s", input, got, tc.want)
 		}
 	}
+}
+
+func TestParseFloat64List(t *testing.T) {
+	got, err := parseFloat64List("0.001, 0.01,0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0] != 0.001 || got[1] != 0.01 || got[2] != 0.1 {
+		t.Fatalf("parseFloat64List returned %v", got)
+	}
+	if _, err := parseFloat64List(""); err == nil {
+		t.Fatal("expected empty list error")
+	}
+}
+
+func testTrainingImage(t *testing.T, width, height int) mirage.RGBImage {
+	t.Helper()
+	img, err := mirage.NewRGBImage(width, height)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for y := 0; y < img.Height; y++ {
+		for x := 0; x < img.Width; x++ {
+			img.Pix[y*img.Width+x] = float32(x) / float32(img.Width-1)
+			img.Pix[img.Width*img.Height+y*img.Width+x] = float32(y) / float32(img.Height-1)
+			img.Pix[2*img.Width*img.Height+y*img.Width+x] = 0.25 + 0.5*float32((x+y)%7)/6
+		}
+	}
+	return img
 }

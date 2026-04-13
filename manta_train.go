@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	mantamodels "github.com/odvcencio/manta/models"
+	mantaruntime "github.com/odvcencio/manta/runtime"
 	"github.com/odvcencio/manta/runtime/backend"
 )
 
@@ -14,14 +15,15 @@ const defaultMantaReferenceTrainCropSize = 16
 // MantaReferenceTrainOptions controls a tiny image-backed reference training
 // run over the Manta Mirage v1 graph.
 type MantaReferenceTrainOptions struct {
-	Config       MantaConfig
-	Steps        int
-	LearningRate float32
-	GradientClip float32
-	WeightDecay  float32
-	MinGDNBeta   float32
-	CropSize     int
-	WeightSeed   int64
+	Config         MantaConfig
+	Steps          int
+	LearningRate   float32
+	GradientClip   float32
+	WeightDecay    float32
+	MinGDNBeta     float32
+	CropSize       int
+	WeightSeed     int64
+	CheckpointPath string
 }
 
 // MantaReferenceTrainResult summarizes convergence for one reference run.
@@ -44,6 +46,7 @@ type MantaReferenceTrainResult struct {
 	Losses         []float32
 	MSEs           []float32
 	Rates          []float32
+	CheckpointPath string
 }
 
 // TrainMantaReferenceImages trains the Manta Mirage v1 graph on decoded RGB
@@ -88,6 +91,11 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
 	}
+	if opts.CheckpointPath != "" {
+		if err := mantaruntime.NewWeightFile(weights).WriteFile(opts.CheckpointPath); err != nil {
+			return MantaReferenceTrainResult{}, err
+		}
+	}
 	return MantaReferenceTrainResult{
 		Images:         len(images),
 		Steps:          opts.Steps,
@@ -107,6 +115,7 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		Losses:         append([]float32(nil), history.Losses...),
 		MSEs:           append([]float32(nil), history.MSEs...),
 		Rates:          append([]float32(nil), history.Rates...),
+		CheckpointPath: opts.CheckpointPath,
 	}, nil
 }
 

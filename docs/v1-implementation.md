@@ -52,6 +52,9 @@ schema and host-reference runtime form:
   center-crops them to the Manta v1 input shape, initializes deterministic
   trainable weights, and runs the `train_step` graph through Manta
   `ExecuteAutograd` with clipped SGD
+- `mirage train-manta-kodak` walks a real image directory, selects a bounded
+  subset, runs a lambda sweep through the same reference autograd path, and
+  writes one `.mll` module plus one `.weights.mll` checkpoint per lambda
 
 Remaining work to reach the publishable Balle 2018 result:
 
@@ -66,6 +69,43 @@ Remaining work to reach the publishable Balle 2018 result:
 The implementation boundary is intentional: the `.mrg` file substrate and host
 codec APIs live here, while the learned analysis/synthesis network belongs in
 Manta.
+
+## Reference Training Gate
+
+Before writing more backward kernels, v1 now has a real-data reference gate over
+the Kodak Lossless True Color Image Suite. The initial gate run used
+`kodim01.png` through `kodim05.png`, center-cropped each image to 256x256,
+trained the reference Manta graph for 200 clipped-SGD steps per lambda, and wrote
+Manta module plus weight checkpoints for each point.
+
+Command:
+
+```bash
+go run ./cmd/mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak \
+  -max-images 5 \
+  -steps 200 \
+  -crop 256 \
+  -lambdas 0.001,0.01,0.1 \
+  -bits 2 \
+  -latent-channels 4 \
+  -hyper-channels 4 \
+  -out-dir /tmp/mirage-kodak-runs/full
+```
+
+Observed on 2026-04-13:
+
+| lambda | loss | MSE | rate | duration |
+|---:|---:|---:|---:|---:|
+| 0.001 | 8.859160 -> 2.035252 | 0.159068 -> 0.032364 | 8700.092 -> 2002.888 | 21.9s |
+| 0.01 | 87.159973 -> 38.342190 | 0.159068 -> 0.032364 | 8700.092 -> 3830.982 | 23.2s |
+| 0.1 | 870.168152 -> 405.903961 | 0.159068 -> 0.032364 | 8700.092 -> 4058.716 | 21.1s |
+
+The convergence result de-risks the reference graph on real images. The remaining
+question is calibration: at this tiny scale and short schedule, all three lambda
+points learn similar distortion while rate separates. That is the next signal to
+chase before promoting backward kernels from optimization target to permanent
+surface.
 
 ## Visual System
 
