@@ -60,8 +60,8 @@ Remaining work to reach the publishable Balle 2018 result:
 
 - CUDA forward/backward kernels promoted from host-reference execution
 - WebGPU device kernels promoted from host-reference execution
-- dataset loading, batching, checkpoint writing, and metric sweeps beyond the
-  current image-backed reference training smoke
+- dataset loading, batching, optimizer calibration, and metric sweeps beyond the
+  current Kodak subset reference gate
 - production `.mll` artifacts that replace the Go patch model fingerprint
 - hyperprior synthesis and production learned probabilities instead of the
   current default uniform executable model
@@ -73,10 +73,17 @@ Manta.
 ## Reference Training Gate
 
 Before writing more backward kernels, v1 now has a real-data reference gate over
-the Kodak Lossless True Color Image Suite. The initial gate run used
-`kodim01.png` through `kodim05.png`, center-cropped each image to 256x256,
-trained the reference Manta graph for 200 clipped-SGD steps per lambda, and wrote
-Manta module plus weight checkpoints for each point.
+the Kodak Lossless True Color Image Suite. The first gate run used `kodim01.png`
+through `kodim05.png`, center-cropped each image to 256x256, trained the
+reference Manta graph, and wrote Manta module plus weight checkpoints for each
+lambda point.
+
+The first 2-bit x 4-channel x 4-hyper run exposed a bug: the rate term reached
+entropy logits but did not propagate a surrogate gradient into TurboQuant code
+indices, so `g_a` was effectively trained only by distortion. Manta fixed that
+by adding finite-difference code-index gradients to `cross_entropy_factorized`
+and q_norm STE gradients back to the latent vector magnitude. The Kodak command
+now records raw gradient norms by graph region so this stays visible.
 
 Command:
 
@@ -84,28 +91,31 @@ Command:
 go run ./cmd/mirage train-manta-kodak \
   -dir /tmp/mirage-kodak \
   -max-images 5 \
-  -steps 200 \
+  -steps 500 \
   -crop 256 \
   -lambdas 0.001,0.01,0.1 \
-  -bits 2 \
-  -latent-channels 4 \
-  -hyper-channels 4 \
-  -out-dir /tmp/mirage-kodak-runs/full
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -out-dir /tmp/mirage-kodak-runs/capacity
 ```
 
-Observed on 2026-04-13:
+Observed after the rate-gradient fix on 2026-04-13:
 
-| lambda | loss | MSE | rate | duration |
-|---:|---:|---:|---:|---:|
-| 0.001 | 8.859160 -> 2.035252 | 0.159068 -> 0.032364 | 8700.092 -> 2002.888 | 21.9s |
-| 0.01 | 87.159973 -> 38.342190 | 0.159068 -> 0.032364 | 8700.092 -> 3830.982 | 23.2s |
-| 0.1 | 870.168152 -> 405.903961 | 0.159068 -> 0.032364 | 8700.092 -> 4058.716 | 21.1s |
+| lambda | loss | MSE | rate | analysis grad | duration |
+|---:|---:|---:|---:|---:|---:|
+| 0.001 | 28.200409 -> 20.649328 | 0.158276 -> 0.031796 | 28042.131 -> 20617.531 | 26.966 -> 8.502 | 7m05.8s |
+| 0.01 | 280.579620 -> 275.010864 | 0.158276 -> 0.031796 | 28042.131 -> 27497.906 | 269.655 -> 79.649 | 7m05.3s |
+| 0.1 | 2804.371826 -> 2486.961182 | 0.158276 -> 0.031796 | 28042.131 -> 24869.295 | 2696.551 -> 1037.287 | 7m05.4s |
 
-The convergence result de-risks the reference graph on real images. The remaining
-question is calibration: at this tiny scale and short schedule, all three lambda
-points learn similar distortion while rate separates. That is the next signal to
-chase before promoting backward kernels from optimization target to permanent
-surface.
+The rate-gradient fix worked: the first-step analysis gradient norm scales with
+lambda, so the rate signal now reaches the analysis path. Calibration is still
+not solved. Final MSE remains effectively identical across the three lambda
+points, and the lowest lambda still produces the lowest final rate. A 10x clip
+relaxation at lambda 0.1 diverged to `+Inf`; `clip=1` stayed finite but increased
+rate to `30536.723`; `clip=5` with a 10x lower learning rate stayed finite but
+ended at MSE `0.063768` and rate `25066.537`. The next blocker is optimizer /
+surrogate calibration for high-lambda rate pressure, not CUDA backward kernels.
 
 ## Visual System
 

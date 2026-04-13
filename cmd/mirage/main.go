@@ -506,9 +506,13 @@ func runTrainMantaKodak(args []string) error {
 			ModulePath:     modulePath,
 			CheckpointPath: result.CheckpointPath,
 		}
+		if len(result.GradientNorms) > 0 {
+			run.FirstGradientNorms = trainMantaGradientNormsFromResult(result.GradientNorms[0])
+			run.LastGradientNorms = trainMantaGradientNormsFromResult(result.GradientNorms[len(result.GradientNorms)-1])
+		}
 		summary.Runs = append(summary.Runs, run)
 		if !*jsonOut {
-			fmt.Printf("lambda=%.6g images=%d crop=%dx%d steps=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f duration=%s\n",
+			fmt.Printf("lambda=%.6g images=%d crop=%dx%d steps=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f grad_analysis=%.6f->%.6f grad_total=%.6f->%.6f duration=%s\n",
 				run.Lambda,
 				run.Images,
 				run.CropWidth,
@@ -521,6 +525,10 @@ func runTrainMantaKodak(args []string) error {
 				run.FinalMSE,
 				run.InitialRate,
 				run.FinalRate,
+				run.FirstGradientNorms.Analysis,
+				run.LastGradientNorms.Analysis,
+				run.FirstGradientNorms.Total,
+				run.LastGradientNorms.Total,
 				run.Duration,
 			)
 		}
@@ -768,6 +776,18 @@ func lambdaPathLabel(lambda float64) string {
 	return label
 }
 
+func trainMantaGradientNormsFromResult(in mirage.MantaReferenceGradientNorms) trainMantaGradientNorms {
+	return trainMantaGradientNorms{
+		Total:          in.Total,
+		Analysis:       in.Analysis,
+		HyperAnalysis:  in.HyperAnalysis,
+		HyperSynthesis: in.HyperSynthesis,
+		Synthesis:      in.Synthesis,
+		Prior:          in.Prior,
+		Other:          in.Other,
+	}
+}
+
 type stringListFlag []string
 
 func (f *stringListFlag) String() string {
@@ -791,23 +811,35 @@ type trainMantaKodakSummary struct {
 }
 
 type trainMantaKodakRun struct {
-	Lambda         float64 `json:"lambda"`
-	Images         int     `json:"images"`
-	Steps          int     `json:"steps"`
-	CropWidth      int     `json:"crop_width"`
-	CropHeight     int     `json:"crop_height"`
-	LatentChannels int     `json:"latent_channels"`
-	HyperChannels  int     `json:"hyper_channels"`
-	BitWidth       int     `json:"bit_width"`
-	Factorization  string  `json:"factorization"`
-	InitialLoss    float32 `json:"initial_loss"`
-	FinalLoss      float32 `json:"final_loss"`
-	DeltaLoss      float32 `json:"delta_loss"`
-	InitialMSE     float32 `json:"initial_mse"`
-	FinalMSE       float32 `json:"final_mse"`
-	InitialRate    float32 `json:"initial_rate"`
-	FinalRate      float32 `json:"final_rate"`
-	Duration       string  `json:"duration"`
-	ModulePath     string  `json:"module_path,omitempty"`
-	CheckpointPath string  `json:"checkpoint_path,omitempty"`
+	Lambda             float64                 `json:"lambda"`
+	Images             int                     `json:"images"`
+	Steps              int                     `json:"steps"`
+	CropWidth          int                     `json:"crop_width"`
+	CropHeight         int                     `json:"crop_height"`
+	LatentChannels     int                     `json:"latent_channels"`
+	HyperChannels      int                     `json:"hyper_channels"`
+	BitWidth           int                     `json:"bit_width"`
+	Factorization      string                  `json:"factorization"`
+	InitialLoss        float32                 `json:"initial_loss"`
+	FinalLoss          float32                 `json:"final_loss"`
+	DeltaLoss          float32                 `json:"delta_loss"`
+	InitialMSE         float32                 `json:"initial_mse"`
+	FinalMSE           float32                 `json:"final_mse"`
+	InitialRate        float32                 `json:"initial_rate"`
+	FinalRate          float32                 `json:"final_rate"`
+	FirstGradientNorms trainMantaGradientNorms `json:"first_gradient_norms"`
+	LastGradientNorms  trainMantaGradientNorms `json:"last_gradient_norms"`
+	Duration           string                  `json:"duration"`
+	ModulePath         string                  `json:"module_path,omitempty"`
+	CheckpointPath     string                  `json:"checkpoint_path,omitempty"`
+}
+
+type trainMantaGradientNorms struct {
+	Total          float32 `json:"total"`
+	Analysis       float32 `json:"analysis"`
+	HyperAnalysis  float32 `json:"hyper_analysis"`
+	HyperSynthesis float32 `json:"hyper_synthesis"`
+	Synthesis      float32 `json:"synthesis"`
+	Prior          float32 `json:"prior"`
+	Other          float32 `json:"other"`
 }

@@ -46,7 +46,20 @@ type MantaReferenceTrainResult struct {
 	Losses         []float32
 	MSEs           []float32
 	Rates          []float32
+	GradientNorms  []MantaReferenceGradientNorms
 	CheckpointPath string
+}
+
+// MantaReferenceGradientNorms records raw reference autograd gradient L2 norms
+// by Mirage graph region before clipping.
+type MantaReferenceGradientNorms struct {
+	Total          float32
+	Analysis       float32
+	HyperAnalysis  float32
+	HyperSynthesis float32
+	Synthesis      float32
+	Prior          float32
+	Other          float32
 }
 
 // TrainMantaReferenceImages trains the Manta Mirage v1 graph on decoded RGB
@@ -115,8 +128,28 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		Losses:         append([]float32(nil), history.Losses...),
 		MSEs:           append([]float32(nil), history.MSEs...),
 		Rates:          append([]float32(nil), history.Rates...),
+		GradientNorms:  convertMantaReferenceGradientNorms(history.GradientNorms),
 		CheckpointPath: opts.CheckpointPath,
 	}, nil
+}
+
+func convertMantaReferenceGradientNorms(in []mantamodels.MirageV1ReferenceGradientNorms) []MantaReferenceGradientNorms {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]MantaReferenceGradientNorms, len(in))
+	for i, item := range in {
+		out[i] = MantaReferenceGradientNorms{
+			Total:          item.Total,
+			Analysis:       item.Analysis,
+			HyperAnalysis:  item.HyperAnalysis,
+			HyperSynthesis: item.HyperSynthesis,
+			Synthesis:      item.Synthesis,
+			Prior:          item.Prior,
+			Other:          item.Other,
+		}
+	}
+	return out
 }
 
 func normalizeMantaReferenceTrainOptions(opts MantaReferenceTrainOptions) MantaReferenceTrainOptions {

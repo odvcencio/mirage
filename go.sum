@@ -1,7 +1,7 @@
 github.com/klauspost/cpuid/v2 v2.0.9 h1:lgaqFMSdTdQYdZ04uHyN2d/eKdOMyi2YLSvlQIBFYa4=
 github.com/klauspost/cpuid/v2 v2.0.9/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
-github.com/odvcencio/manta v0.0.14-0.20260413194311-6aa7200dc514 h1:ggQDh7ELSUWCLvLgK2VaeBzOO7ggtHIBzqAiDP1+hLQ=
-github.com/odvcencio/manta v0.0.14-0.20260413194311-6aa7200dc514/go.mod h1:Ho6bhXd88kA2SE9vQr5rguafEzhbnbJV5580XMZBUI0=
+github.com/odvcencio/manta v0.0.14-0.20260413203857-abb8a1c1d516 h1:1ouElAebLEGtIHp2+jZI8LSzCWPDOFe5vjWxV9wrxo8=
+github.com/odvcencio/manta v0.0.14-0.20260413203857-abb8a1c1d516/go.mod h1:Ho6bhXd88kA2SE9vQr5rguafEzhbnbJV5580XMZBUI0=
 github.com/odvcencio/mll v0.0.1 h1:rmsQoXQu3EnKLsoeX+q/w2XaPxoSKIZq2QJhG4lUO8E=
 github.com/odvcencio/mll v0.0.1/go.mod h1:Yjspjp/u0/Yap+hoDkJyJxjuyhFWcmLLJksgLi4WTWA=
 github.com/odvcencio/turboquant v0.1.2 h1:4GIs+6wQAd0Tz765mC+KDt2ESmBLfm1z7zVZj2tGrzc=
