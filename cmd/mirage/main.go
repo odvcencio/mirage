@@ -36,6 +36,10 @@ func main() {
 		err = runInfo(os.Args[2:])
 	case "eval":
 		err = runEval(os.Args[2:])
+	case "eval-manta-kodak":
+		err = runEvalMantaKodak(os.Args[2:])
+	case "fetch-compressai-baseline":
+		err = runFetchCompressAIBaseline(os.Args[2:])
 	case "init-manta":
 		err = runInitManta(os.Args[2:])
 	case "check-manta":
@@ -60,6 +64,8 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  mirage decode -in image.mrg -out image.png [-manta-module model.mll -manta-weights model.weights.mll]")
 	fmt.Fprintln(w, "  mirage info   -in image.mrg")
 	fmt.Fprintln(w, "  mirage eval   -source image.png -mrg image.mrg")
+	fmt.Fprintln(w, "  mirage eval-manta-kodak -dir kodak -run-dir runs/kodak-reference [-out-dir eval]")
+	fmt.Fprintln(w, "  mirage fetch-compressai-baseline -out-dir baselines/compressai [-qualities 1,2,3,4,5,6,7,8]")
 	fmt.Fprintln(w, "  mirage init-manta -out mirage_v1.mll [-bits 2|4|8]")
 	fmt.Fprintln(w, "  mirage check-manta -in mirage_v1.mll [-entry train_step]")
 	fmt.Fprintln(w, "  mirage train-manta-smoke -in image.png [-in image2.png] [-steps 24] [-crop 16]")

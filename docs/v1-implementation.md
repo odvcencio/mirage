@@ -116,13 +116,13 @@ Observed after the rate-gradient fix on 2026-04-13:
 | 0.1 | 2804.371826 -> 2486.961182 | 0.158276 -> 0.031796 | 28042.131 -> 24869.295 | 2696.551 -> 1037.287 | 7m05.4s |
 
 The rate-gradient fix worked: the first-step analysis gradient norm scales with
-lambda, so the rate signal now reaches the analysis path. Calibration is still
-not solved. Final MSE remains effectively identical across the three lambda
-points, and the lowest lambda still produces the lowest final rate. A 10x clip
-relaxation at lambda 0.1 diverged to `+Inf`; `clip=1` stayed finite but increased
-rate to `30536.723`; `clip=5` with a 10x lower learning rate stayed finite but
-ended at MSE `0.063768` and rate `25066.537`. The next blocker is optimizer /
-surrogate calibration for high-lambda rate pressure, not CUDA backward kernels.
+lambda, so the rate signal now reaches the analysis path. At this point
+calibration was still not solved. Final MSE remained effectively identical
+across the three lambda points, and the lowest lambda still produced the lowest
+final rate. A 10x clip relaxation at lambda 0.1 diverged to `+Inf`; `clip=1`
+stayed finite but increased rate to `30536.723`; `clip=5` with a 10x lower
+learning rate stayed finite but ended at MSE `0.063768` and rate `25066.537`.
+Those results triggered the longer baseline and loss-unit audit below.
 
 The next baseline is a single middle-lambda run over all 24 Kodak images:
 
@@ -185,8 +185,79 @@ The run ended at MSE `0.007756` (`21.10 dB`) in `14m29s`. A hard `.mrg`
 round trip from that checkpoint on the 256x256 center crop of `kodim01.png`
 measured MSE `0.009858`, PSNR `20.06 dB`, `0.4336 bpp`, and `3552` container
 bytes. This confirms the network can reconstruct through the real deployment
-path; the next calibration step is an Adam lambda sweep with the bpp-normalized
-loss.
+path.
+
+The follow-up Adam sweep used the bpp-normalized RD loss:
+
+```bash
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 10 \
+  -steps 1000 \
+  -crop 256 \
+  -lambdas 0.001,0.01,0.1 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -optimizer adam \
+  -lr 0.001 \
+  -clip 1 \
+  -out-dir /tmp/mirage-kodak-runs/adam-bpp-sweep
+```
+
+Training endpoints:
+
+| lambda | loss | MSE | rate | analysis grad | duration |
+|---:|---:|---:|---:|---:|---:|
+| 0.001 | 0.191980 -> 0.008244 | 0.191589 -> 0.007936 | 25626.719 -> 20175.797 | 0.032612 -> 0.084052 | 14m42.5s |
+| 0.01 | 0.195500 -> 0.011243 | 0.191589 -> 0.008280 | 25626.719 -> 19419.861 | 0.032810 -> 0.129887 | 14m25.4s |
+| 0.1 | 0.230693 -> 0.047937 | 0.191589 -> 0.015155 | 25626.719 -> 21483.936 | 0.035037 -> 0.196333 | 14m19.0s |
+
+That is the first real low-vs-mid lambda rate-distortion signal: lambda `0.01`
+buys a lower real rate than lambda `0.001` with only a small distortion cost.
+Lambda `0.1` is too aggressive at this optimizer/capacity point and degrades
+both quality and final payload rate.
+
+## Evaluation and Baselines
+
+The reference infrastructure now includes a checkpoint evaluation harness that
+turns trained Manta weights into real `.mrg` artifacts and measures decoded
+container bpp plus PSNR across an image set:
+
+```bash
+mirage eval-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 10 \
+  -run-dir /tmp/mirage-kodak-runs/adam-bpp-sweep \
+  -out-dir /tmp/mirage-kodak-runs/adam-bpp-eval
+```
+
+Measured `.mrg` deployment results from the 10-image sweep:
+
+| lambda | avg MSE | avg PSNR | avg bpp | avg container bytes |
+|---:|---:|---:|---:|---:|
+| 0.001 | 0.00796491 | 21.8310 | 0.3498 | 2865.2 |
+| 0.01 | 0.00839294 | 21.6181 | 0.3382 | 2770.8 |
+| 0.1 | 0.01466716 | 18.5756 | 0.3697 | 3028.6 |
+
+The evaluation harness writes one `.mrg` per model/image pair plus
+`eval_summary.json`, so later runs can compare training telemetry against actual
+bitstream artifacts instead of proxy losses.
+
+CompressAI baseline checkpoint download is also wired for the Balle 2018
+factorized-prior MSE models:
+
+```bash
+mirage fetch-compressai-baseline \
+  -out-dir /tmp/mirage-baselines/compressai \
+  -qualities 1,2,3,4,5,6,7,8 \
+  -timeout 1h
+```
+
+The first download completed all eight official checkpoints and wrote
+`/tmp/mirage-baselines/compressai/manifest.json`. The manifest records the
+source URL, checkpoint URLs, byte counts, and SHA-256 hashes. Total downloaded
+checkpoint size is about `141M`.
 
 ## Deployment Round Trip
 
@@ -224,12 +295,13 @@ Real `.mrg` measurements on the 256x256 center crop of `kodim01.png`:
 | 0.01 | 27497.906 | 3780 | 0.4614 | 14.9008 |
 | 0.1 | 24869.295 | 3447 | 0.4208 | 14.9009 |
 
-This rules out the "training metric is inverted" branch. The real `.mrg` rate
-tracks the training proxy direction: the low-lambda checkpoint has lower real
-bpp than the high-lambda checkpoint, while PSNR is effectively identical. The
-remaining blocker is therefore training dynamics / surrogate bias causing
-high-lambda optimization to produce a worse entropy model, not a deployment
-measurement mismatch.
+This ruled out the "training metric is inverted" branch for the pre-normalized
+checkpoints. The real `.mrg` rate tracked the training proxy direction: the
+low-lambda checkpoint had lower real bpp than the high-lambda checkpoint, while
+PSNR was effectively identical. The bpp-normalized Adam sweep and
+`eval-manta-kodak` results above supersede this older calibration conclusion,
+but the diagnostic remains useful because it proved the deployment measurement
+path was not the source of the inversion.
 
 ## Visual System
 
