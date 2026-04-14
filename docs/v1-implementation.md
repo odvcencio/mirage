@@ -307,6 +307,30 @@ Every checkpoint is named `mirage_v1_lambda_<lambda>_step_<step>.mll` plus a
 matching `.weights.mll`, so `mirage eval-manta-kodak -run-dir ...` can evaluate
 all saved training points without additional conversion.
 
+The 2026-04-14 cosine-decay checkpoint-selection run completed in
+`1h19m5s`. It confirms that the model reaches a useful basin early and then
+destabilizes:
+
+| checkpoint | train MSE | train rate | lr | avg PSNR | avg bpp | avg bytes |
+|---:|---:|---:|---:|---:|---:|---:|
+| 500 | 0.011559 | 20710.795 | 0.00097586 | 19.9552 | 0.3579 | 2932.0 |
+| 1000 | 0.008001 | 19240.440 | 0.00090561 | 21.8183 | 0.3355 | 2748.2 |
+| 1500 | 0.007097 | 18320.854 | 0.00079613 | 22.0125 | 0.3213 | 2632.0 |
+| 2000 | 0.047519 | 44886.970 | 0.00065814 | 13.4117 | 0.5876 | 4814.0 |
+| 2500 | 0.019413 | 64232.500 | 0.00050516 | 16.7932 | 0.5909 | 4840.4 |
+| 3000 | 12.480452 | 37415.363 | 0.00035215 | 5.6275 | 0.3764 | 3083.8 |
+| 3500 | 0.038999 | 43388.030 | 0.00021412 | 14.4798 | 0.4513 | 3697.1 |
+| 4000 | 0.042354 | 43782.152 | 0.00010457 | 14.0343 | 0.4394 | 3599.3 |
+| 4500 | 0.040284 | 16549.016 | 0.00003424 | 14.3421 | 0.2500 | 2048.4 |
+| 5000 | 0.053453 | 21345.926 | 0.00001000 | 12.7561 | 0.2738 | 2243.1 |
+
+The best evaluated artifact is step 1500 at `22.0125 dB` and `0.3213 bpp`.
+The final checkpoint regresses to `12.7561 dB`, so cosine decay alone does not
+stabilize long-horizon training at this capacity. The result moves checkpoint
+selection from a hypothesis to a required training policy and points the next
+experiment at lambda annealing and/or entropy-model warmup rather than more
+flat long runs.
+
 CompressAI baseline checkpoint download is wired for both Balle-style
 CompressAI reference families needed for v1 comparison: `bmshj2018-factorized`
 as the no-hyperprior lower bar, and `bmshj2018-hyperprior` as the
