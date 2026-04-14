@@ -503,6 +503,48 @@ lambda should be treated as a checkpoint-selection candidate until random crops
 and/or capacity scaling show that the low-rate branch can remain stable at the
 endpoint.
 
+The first random-crop transfer test kept the same model size and optimizer
+recipe, switched to all 24 Kodak images, and materialized one deterministic
+random 256x256 crop per source image:
+
+```bash
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 24 \
+  -steps 2000 \
+  -crop 256 \
+  -crop-mode random \
+  -random-crops-per-image 1 \
+  -crop-seed 20260414 \
+  -lambdas 0.01 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -optimizer adam \
+  -lr 0.001 \
+  -lr-schedule cosine \
+  -lr-final 0.000001 \
+  -clip 1 \
+  -checkpoint-every 100 \
+  -out-dir /tmp/mirage-kodak-runs/adam-bpp-short-cosine-random-lambda-0p01
+```
+
+The run completed in `39m49s` with training MSE `0.225658 -> 0.008127` and
+training rate `25665.725 -> 19694.320`. It was stable through the endpoint:
+
+| training data | eval images | endpoint avg MSE | endpoint PSNR | endpoint bpp | endpoint bytes |
+|---|---:|---:|---:|---:|---:|
+| 10 center crops | 10 | 0.007403 | 22.2543 | 0.3355 | 2748.2 |
+| 10 center crops | 24 | 0.007791 | 21.7257 | 0.3398 | 2783.9 |
+| 24 random crops | 24 | 0.008150 | 21.5218 | 0.3481 | 2851.6 |
+
+The all-24 comparison is the fair one for this experiment. A single random crop
+per image did not improve the same-capacity, same-step endpoint; it was
+`-0.20 dB` and `+0.008 bpp` behind the center-crop-trained checkpoint on the
+same 24-image eval set. The useful signal is stability rather than quality:
+random crops did not collapse, but they likely need either more steps or a
+larger model before they pay back.
+
 CompressAI baseline checkpoint download is wired for both Balle-style
 CompressAI reference families needed for v1 comparison: `bmshj2018-factorized`
 as the no-hyperprior lower bar, and `bmshj2018-hyperprior` as the

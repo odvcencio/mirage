@@ -32,7 +32,9 @@ local module replaces in the standalone workspace.
 Current v1 training baseline: the 2000-step Adam/cosine reference recipe on 10
 Kodak center crops reaches `22.2543 dB` at `0.3355 bpp` for lambda `0.01`.
 The same recipe is stable for lambda `0.001`; lambda `0.1` still needs
-checkpoint selection at this capacity.
+checkpoint selection at this capacity. On the all-24 Kodak eval set, the
+center-crop checkpoint reaches `21.7257 dB` at `0.3398 bpp`; a one-random-crop
+transfer run is stable but currently lower at `21.5218 dB` and `0.3481 bpp`.
 
 ## Quick Start
 
