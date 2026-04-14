@@ -67,5 +67,6 @@ func mantaModelsConfig(cfg MantaConfig) models.MirageV1Config {
 		Seed:           cfg.Seed,
 		Factorization:  mantaFactorizationString(cfg.Factorization),
 		Lambda:         cfg.Lambda,
+		LambdaSet:      cfg.LambdaSet,
 	}
 }

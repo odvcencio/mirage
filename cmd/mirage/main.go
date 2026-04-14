@@ -312,7 +312,7 @@ func runInitManta(args []string) error {
 	latentChannels := fs.Int("latent-channels", 0, "latent channels")
 	hyperChannels := fs.Int("hyper-channels", 0, "hyperprior channels")
 	bits := fs.Int("bits", 0, "TurboQuant bits per latent coordinate: 2, 4, or 8")
-	lambda := fs.Float64("lambda", 0, "rate-distortion lambda")
+	lambda := fs.Float64("lambda", 0.01, "rate-distortion lambda")
 	factorizationFlag := fs.String("factorization", "categorical", "coordinate entropy factorization: categorical or bit-plane")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -333,6 +333,7 @@ func runInitManta(args []string) error {
 		BitWidth:       *bits,
 		Factorization:  factorization,
 		Lambda:         *lambda,
+		LambdaSet:      true,
 	}
 	if err := mirage.WriteMantaMLL(*out, cfg); err != nil {
 		return err
@@ -398,6 +399,10 @@ func runTrainMantaSmoke(args []string) error {
 	fs.Var(&inputs, "in", "input PNG, JPEG, or PPM; repeat for multiple images")
 	steps := fs.Int("steps", 24, "reference SGD steps")
 	lr := fs.Float64("lr", 0.02, "reference SGD learning rate")
+	optimizer := fs.String("optimizer", "sgd", "reference optimizer: sgd or adam")
+	adamBeta1 := fs.Float64("adam-beta1", 0.9, "Adam beta1")
+	adamBeta2 := fs.Float64("adam-beta2", 0.999, "Adam beta2")
+	adamEpsilon := fs.Float64("adam-epsilon", 1e-8, "Adam epsilon")
 	clip := fs.Float64("clip", 0.5, "gradient clipping threshold")
 	weightDecay := fs.Float64("weight-decay", 0, "SGD weight decay")
 	crop := fs.Int("crop", 16, "center crop size")
@@ -447,11 +452,16 @@ func runTrainMantaSmoke(args []string) error {
 		Seed:           *modelSeed,
 		Factorization:  factorization,
 		Lambda:         *lambda,
+		LambdaSet:      true,
 	}
 	result, err := mirage.TrainMantaReferenceImages(images, mirage.MantaReferenceTrainOptions{
 		Config:       cfg,
 		Steps:        *steps,
 		LearningRate: float32(*lr),
+		Optimizer:    *optimizer,
+		AdamBeta1:    float32(*adamBeta1),
+		AdamBeta2:    float32(*adamBeta2),
+		AdamEpsilon:  float32(*adamEpsilon),
 		GradientClip: float32(*clip),
 		WeightDecay:  float32(*weightDecay),
 		CropSize:     *crop,
@@ -495,6 +505,10 @@ func runTrainMantaKodak(args []string) error {
 	lambdaList := fs.String("lambdas", "0.001,0.01,0.1", "comma-separated lambda sweep")
 	factorizationFlag := fs.String("factorization", "categorical", "coordinate entropy factorization: categorical or bit-plane")
 	lr := fs.Float64("lr", 0.02, "reference SGD learning rate")
+	optimizer := fs.String("optimizer", "sgd", "reference optimizer: sgd or adam")
+	adamBeta1 := fs.Float64("adam-beta1", 0.9, "Adam beta1")
+	adamBeta2 := fs.Float64("adam-beta2", 0.999, "Adam beta2")
+	adamEpsilon := fs.Float64("adam-epsilon", 1e-8, "Adam epsilon")
 	clip := fs.Float64("clip", 0.5, "gradient clipping threshold")
 	weightDecay := fs.Float64("weight-decay", 0, "SGD weight decay")
 	modelSeed := fs.Int64("model-seed", 0, "Manta graph seed")
@@ -550,8 +564,11 @@ func runTrainMantaKodak(args []string) error {
 			Seed:           *modelSeed,
 			Factorization:  factorization,
 			Lambda:         lambda,
+			LambdaSet:      true,
 		}
 		cfg = normalizeMantaCLIConfig(cfg, *crop)
+		cfg.Lambda = lambda
+		cfg.LambdaSet = true
 		checkpointPath := ""
 		modulePath := ""
 		if *outDir != "" {
@@ -567,6 +584,10 @@ func runTrainMantaKodak(args []string) error {
 			Config:         cfg,
 			Steps:          *steps,
 			LearningRate:   float32(*lr),
+			Optimizer:      *optimizer,
+			AdamBeta1:      float32(*adamBeta1),
+			AdamBeta2:      float32(*adamBeta2),
+			AdamEpsilon:    float32(*adamEpsilon),
 			GradientClip:   float32(*clip),
 			WeightDecay:    float32(*weightDecay),
 			CropSize:       *crop,
@@ -594,6 +615,7 @@ func runTrainMantaKodak(args []string) error {
 			TrainingCrops:  result.TrainingCrops,
 			RandomCrops:    result.RandomCrops,
 			CropSeed:       result.CropSeed,
+			Optimizer:      result.Optimizer,
 			InitialLoss:    result.InitialLoss,
 			FinalLoss:      result.FinalLoss,
 			DeltaLoss:      result.InitialLoss - result.FinalLoss,
@@ -612,13 +634,14 @@ func runTrainMantaKodak(args []string) error {
 		}
 		summary.Runs = append(summary.Runs, run)
 		if !*jsonOut {
-			fmt.Printf("lambda=%.6g images=%d training_crops=%d crop=%dx%d crop_mode=%s steps=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f grad_analysis=%.6f->%.6f grad_total=%.6f->%.6f duration=%s\n",
+			fmt.Printf("lambda=%.6g images=%d training_crops=%d crop=%dx%d crop_mode=%s optimizer=%s steps=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f grad_analysis=%.6f->%.6f grad_total=%.6f->%.6f duration=%s\n",
 				run.Lambda,
 				run.Images,
 				run.TrainingCrops,
 				run.CropWidth,
 				run.CropHeight,
 				run.CropMode,
+				run.Optimizer,
 				run.Steps,
 				run.InitialLoss,
 				run.FinalLoss,
@@ -674,7 +697,7 @@ func normalizeMantaCLIConfig(cfg mirage.MantaConfig, crop int) mirage.MantaConfi
 	if cfg.BitWidth == 0 {
 		cfg.BitWidth = 2
 	}
-	if cfg.Lambda == 0 {
+	if cfg.Lambda == 0 && !cfg.LambdaSet {
 		cfg.Lambda = 0.001
 	}
 	return cfg
@@ -954,6 +977,7 @@ type trainMantaKodakRun struct {
 	TrainingCrops      int                     `json:"training_crops"`
 	RandomCrops        int                     `json:"random_crops_per_image"`
 	CropSeed           int64                   `json:"crop_seed"`
+	Optimizer          string                  `json:"optimizer"`
 	InitialLoss        float32                 `json:"initial_loss"`
 	FinalLoss          float32                 `json:"final_loss"`
 	DeltaLoss          float32                 `json:"delta_loss"`

@@ -3,7 +3,7 @@ module github.com/odvcencio/mirage
 go 1.25.1
 
 require (
-	github.com/odvcencio/manta v0.0.14-0.20260413203857-abb8a1c1d516
+	github.com/odvcencio/manta v0.0.14-0.20260414052151-6b15579e80e1
 	github.com/odvcencio/turboquant v0.1.2
 )
 

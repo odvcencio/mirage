@@ -25,6 +25,10 @@ type MantaReferenceTrainOptions struct {
 	GradientClip   float32
 	WeightDecay    float32
 	MinGDNBeta     float32
+	Optimizer      string
+	AdamBeta1      float32
+	AdamBeta2      float32
+	AdamEpsilon    float32
 	CropSize       int
 	CropMode       string
 	RandomCrops    int
@@ -61,6 +65,7 @@ type MantaReferenceTrainResult struct {
 	Rates          []float32
 	GradientNorms  []MantaReferenceGradientNorms
 	CheckpointPath string
+	Optimizer      string
 }
 
 // MantaReferenceGradientNorms records raw reference autograd gradient L2 norms
@@ -105,6 +110,10 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		GradientClip: opts.GradientClip,
 		WeightDecay:  opts.WeightDecay,
 		MinGDNBeta:   opts.MinGDNBeta,
+		Optimizer:    opts.Optimizer,
+		AdamBeta1:    opts.AdamBeta1,
+		AdamBeta2:    opts.AdamBeta2,
+		AdamEpsilon:  opts.AdamEpsilon,
 	})
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
@@ -144,6 +153,7 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		Rates:          append([]float32(nil), history.Rates...),
 		GradientNorms:  convertMantaReferenceGradientNorms(history.GradientNorms),
 		CheckpointPath: opts.CheckpointPath,
+		Optimizer:      opts.Optimizer,
 	}, nil
 }
 
@@ -188,7 +198,7 @@ func normalizeMantaReferenceTrainOptions(opts MantaReferenceTrainOptions) MantaR
 	if opts.Config.BitWidth == 0 {
 		opts.Config.BitWidth = 2
 	}
-	if opts.Config.Lambda == 0 {
+	if opts.Config.Lambda == 0 && !opts.Config.LambdaSet {
 		opts.Config.Lambda = 0.001
 	}
 	if opts.Steps <= 0 {
@@ -196,6 +206,10 @@ func normalizeMantaReferenceTrainOptions(opts MantaReferenceTrainOptions) MantaR
 	}
 	if opts.LearningRate == 0 {
 		opts.LearningRate = 0.01
+	}
+	opts.Optimizer = strings.ToLower(strings.TrimSpace(opts.Optimizer))
+	if opts.Optimizer == "" {
+		opts.Optimizer = "sgd"
 	}
 	if opts.GradientClip == 0 {
 		opts.GradientClip = 1

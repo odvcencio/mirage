@@ -12,6 +12,7 @@ type MantaConfig struct {
 	Seed           int64
 	Factorization  Factorization
 	Lambda         float64
+	LambdaSet      bool
 }
 
 // DefaultMantaConfig returns the default Manta Mirage Image v1 shape.

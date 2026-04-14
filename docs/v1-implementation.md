@@ -51,11 +51,11 @@ schema and host-reference runtime form:
 - `mirage train-manta-smoke` decodes one or more PNG/JPEG/PPM images,
   center-crops them to the Manta v1 input shape, initializes deterministic
   trainable weights, and runs the `train_step` graph through Manta
-  `ExecuteAutograd` with clipped SGD
+  `ExecuteAutograd` with clipped SGD or Adam
 - `mirage train-manta-kodak` walks a real image directory, selects a bounded
   subset, runs a lambda sweep through the same reference autograd path, and
   writes one `.mll` module plus one `.weights.mll` checkpoint per lambda
-- `train-manta-kodak` supports `-crop-mode random`,
+- `train-manta-kodak` supports `-optimizer adam`, `-crop-mode random`,
   `-random-crops-per-image`, `-crop-seed`, and `-resume` so longer reference
   runs can train on many deterministic random crops and continue from an
   existing `.weights.mll` checkpoint
@@ -68,8 +68,8 @@ Remaining work to reach the publishable Balle 2018 result:
 
 - CUDA forward/backward kernels promoted from host-reference execution
 - WebGPU device kernels promoted from host-reference execution
-- dataset loading, batching, optimizer calibration, and metric sweeps beyond the
-  current Kodak subset reference gate
+- dataset batching and metric sweeps beyond the current Kodak subset reference
+  gate
 - longer reference and accelerated training runs that produce publishable
   rate-distortion checkpoints
 
@@ -142,6 +142,51 @@ mirage train-manta-kodak \
 This intentionally keeps the current center-crop regime so it answers one
 question cleanly: whether the existing 4-bit x 16-latent x 8-hyper model reaches
 a meaningful operating point when trained for long enough.
+
+That baseline completed in `1h9m14s` and did not reach the target regime:
+lambda `0.01` ended at MSE `0.046059` (`13.37 dB` proxy PSNR) and rate
+`22892.527`. The loss decomposition showed the structural unit mismatch:
+`loss = mse + lambda * rate` used summed image bits, so even lambda `0.01`
+made the rate term roughly 99.9% of the loss.
+
+The current Manta training graph fixes the first-order calibration issues:
+
+- `rate_distortion_loss` now accepts `rate_scale`, and Mirage v1 modules set it
+  to `1 / (image_width * image_height)`, so the loss combines MSE with bpp
+  rather than summed image bits.
+- explicit lambda `0` is preserved for pure-MSE controls instead of being
+  normalized to the default lambda.
+- `train_step` still emits hard TurboQuant codes for the entropy model, but the
+  reconstruction branch synthesizes from continuous `y`; deployment entrypoints
+  continue to use hard `analyze` / `synthesize_*` paths.
+- the deterministic reference initializer no longer applies the extra `0.25`
+  weight-scale shrink, which was starving the encoder of reconstruction
+  gradient.
+- the reference trainer supports `-optimizer adam` for calibration runs.
+
+Pure-MSE confirmation after those fixes:
+
+```bash
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 10 \
+  -steps 1000 \
+  -crop 256 \
+  -lambdas 0 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -optimizer adam \
+  -lr 0.001 \
+  -out-dir /tmp/mirage-kodak-runs/pure-mse-adam
+```
+
+The run ended at MSE `0.007756` (`21.10 dB`) in `14m29s`. A hard `.mrg`
+round trip from that checkpoint on the 256x256 center crop of `kodim01.png`
+measured MSE `0.009858`, PSNR `20.06 dB`, `0.4336 bpp`, and `3552` container
+bytes. This confirms the network can reconstruct through the real deployment
+path; the next calibration step is an Adam lambda sweep with the bpp-normalized
+loss.
 
 ## Deployment Round Trip
 
