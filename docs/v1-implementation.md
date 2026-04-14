@@ -351,13 +351,39 @@ mirage train-manta-kodak \
   -lr-schedule cosine \
   -lr-final 0.00001 \
   -lambda-schedule linear \
-  -lambda-delay-steps 1000 \
+  -lambda-start 0.001 \
+  -lambda-delay-steps 500 \
   -lambda-ramp-steps 1000 \
   -freeze-analysis-steps 500 \
   -clip 1 \
   -checkpoint-every 500 \
   -out-dir /tmp/mirage-kodak-runs/adam-bpp-anneal-warmup-lambda-0p01
 ```
+
+The first combined warmup/annealing run used `lambda-start=0.001`, held that
+low rate pressure during the first 500 analysis-frozen steps, then ramped to
+the target `0.01` over the next 1000 steps. It completed in `1h12m44s`:
+
+| checkpoint | active lambda | train MSE | train rate | avg PSNR | avg bpp | avg bytes |
+|---:|---:|---:|---:|---:|---:|---:|
+| 500 | 0.001000 | 0.012626 | 16211.940 | 19.2449 | 0.2892 | 2369.5 |
+| 1000 | 0.005491 | 0.013120 | 16648.904 | 19.2962 | 0.2958 | 2423.4 |
+| 1500 | 0.009991 | 0.011628 | 15710.909 | 19.9053 | 0.2815 | 2306.3 |
+| 2000 | 0.010000 | 0.011922 | 16272.987 | 19.2784 | 0.2899 | 2374.9 |
+| 2500 | 0.010000 | 0.045953 | 70997.390 | 13.5451 | 0.7942 | 6506.1 |
+| 3000 | 0.010000 | 0.022702 | 26001.295 | 16.9030 | 0.4220 | 3456.9 |
+| 3500 | 0.010000 | 0.020074 | 23788.217 | 17.5151 | 0.3981 | 3261.4 |
+| 4000 | 0.010000 | 0.018823 | 23077.400 | 17.8282 | 0.3904 | 3198.2 |
+| 4500 | 0.010000 | 0.018259 | 22911.560 | 17.9746 | 0.3887 | 3184.0 |
+| 5000 | 0.010000 | 0.018072 | 22846.932 | 18.0183 | 0.3872 | 3172.2 |
+
+This improves the long-horizon endpoint over cosine decay alone (`18.0183 dB`
+vs. `12.7561 dB`) but does not recover the earlier best artifact
+(`22.0125 dB` at `0.3213 bpp`). The step-2500 rate spike shows that Adam is
+still crossing an unstable region after the ramp reaches full lambda. The next
+controlled experiments should isolate the variables: lambda annealing without
+analysis freeze, and/or a faster LR decay or hard LR drop after the 1500-step
+basin.
 
 CompressAI baseline checkpoint download is wired for both Balle-style
 CompressAI reference families needed for v1 comparison: `bmshj2018-factorized`
