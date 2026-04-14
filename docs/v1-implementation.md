@@ -244,6 +244,42 @@ The evaluation harness writes one `.mrg` per model/image pair plus
 `eval_summary.json`, so later runs can compare training telemetry against actual
 bitstream artifacts instead of proxy losses.
 
+The controlled 10k-step extension kept the same 10 images, center crops,
+capacity, Adam optimizer, learning rate, and gradient clip. Only the step count
+changed from 1000 to 10000:
+
+```bash
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 10 \
+  -steps 10000 \
+  -crop 256 \
+  -lambdas 0.001,0.01,0.1 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -optimizer adam \
+  -lr 0.001 \
+  -clip 1 \
+  -out-dir /tmp/mirage-kodak-runs/adam-bpp-10k
+```
+
+The three lambda points were run as separate parallel processes and then
+evaluated through real `.mrg` artifacts:
+
+| lambda | train MSE | train rate | avg PSNR | avg bpp | avg bytes | duration |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.001 | 0.036647 | 18724.820 | 14.9019 | 0.3071 | 2515.4 | 2h35m26s |
+| 0.01 | 0.037870 | 84787.438 | 14.7366 | 0.6863 | 5622.2 | 2h35m27s |
+| 0.1 | 0.036385 | 48191.777 | 14.9383 | 0.6771 | 5546.9 | 2h35m59s |
+
+This rules out "more steps alone" as the next fix at the current settings. The
+1k run produced the best current artifact point; the 10k run regressed
+reconstruction and made mid/high-lambda entropy modeling worse. The next
+training-side fix should be a stabilization change such as lambda annealing,
+entropy-model warmup, per-group learning rates, or checkpoint selection, before
+capacity scaling is used as the main lever.
+
 CompressAI baseline checkpoint download is wired for both Balle-style
 CompressAI reference families needed for v1 comparison: `bmshj2018-factorized`
 as the no-hyperprior lower bar, and `bmshj2018-hyperprior` as the
