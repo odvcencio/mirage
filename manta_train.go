@@ -24,6 +24,10 @@ type MantaReferenceTrainOptions struct {
 	LearningRate         float32
 	LearningRateSchedule string
 	FinalLearningRate    float32
+	LambdaSchedule       string
+	InitialLambda        float32
+	LambdaDelaySteps     int
+	LambdaRampSteps      int
 	GradientClip         float32
 	WeightDecay          float32
 	MinGDNBeta           float32
@@ -31,6 +35,7 @@ type MantaReferenceTrainOptions struct {
 	AdamBeta1            float32
 	AdamBeta2            float32
 	AdamEpsilon          float32
+	FreezeAnalysisSteps  int
 	CropSize             int
 	CropMode             string
 	RandomCrops          int
@@ -68,6 +73,7 @@ type MantaReferenceTrainResult struct {
 	MSEs           []float32
 	Rates          []float32
 	LearningRates  []float32
+	Lambdas        []float32
 	GradientNorms  []MantaReferenceGradientNorms
 	Checkpoints    []MantaReferenceCheckpoint
 	CheckpointPath string
@@ -75,6 +81,11 @@ type MantaReferenceTrainResult struct {
 	LearningRate   float32
 	LRSchedule     string
 	FinalLR        float32
+	LambdaSchedule string
+	InitialLambda  float32
+	LambdaDelay    int
+	LambdaRamp     int
+	FreezeAnalysis int
 }
 
 // MantaReferenceCheckpoint records metrics and optional artifact paths for a
@@ -85,6 +96,7 @@ type MantaReferenceCheckpoint struct {
 	MSE            float32
 	Rate           float32
 	LearningRate   float32
+	Lambda         float32
 	ModulePath     string
 	CheckpointPath string
 }
@@ -121,16 +133,16 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
 	}
-	initial, err := mantamodels.MirageV1ReferenceEval(mod, weights, tensors)
-	if err != nil {
-		return MantaReferenceTrainResult{}, err
-	}
 	checkpointFunc := mantaReferenceCheckpointFunc(opts)
 	history, err := mantamodels.TrainMirageV1Reference(mod, weights, tensors, mantamodels.MirageV1ReferenceTrainConfig{
 		Steps:                opts.Steps,
 		LearningRate:         opts.LearningRate,
 		LearningRateSchedule: opts.LearningRateSchedule,
 		FinalLearningRate:    opts.FinalLearningRate,
+		LambdaSchedule:       opts.LambdaSchedule,
+		InitialLambda:        opts.InitialLambda,
+		LambdaDelaySteps:     opts.LambdaDelaySteps,
+		LambdaRampSteps:      opts.LambdaRampSteps,
 		GradientClip:         opts.GradientClip,
 		WeightDecay:          opts.WeightDecay,
 		MinGDNBeta:           opts.MinGDNBeta,
@@ -138,13 +150,10 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		AdamBeta1:            opts.AdamBeta1,
 		AdamBeta2:            opts.AdamBeta2,
 		AdamEpsilon:          opts.AdamEpsilon,
+		FreezeAnalysisSteps:  opts.FreezeAnalysisSteps,
 		CheckpointEvery:      opts.CheckpointEvery,
 		CheckpointFunc:       checkpointFunc,
 	})
-	if err != nil {
-		return MantaReferenceTrainResult{}, err
-	}
-	final, err := mantamodels.MirageV1ReferenceEval(mod, weights, tensors)
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
 	}
@@ -168,16 +177,17 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		RandomCrops:    opts.RandomCrops,
 		CropSeed:       opts.CropSeed,
 		ResumePath:     opts.ResumePath,
-		InitialLoss:    initial.Loss,
-		FinalLoss:      final.Loss,
-		InitialMSE:     initial.MSE,
-		FinalMSE:       final.MSE,
-		InitialRate:    initial.Rate,
-		FinalRate:      final.Rate,
+		InitialLoss:    history.InitialLoss,
+		FinalLoss:      history.FinalLoss,
+		InitialMSE:     history.InitialMSE,
+		FinalMSE:       history.FinalMSE,
+		InitialRate:    history.InitialRate,
+		FinalRate:      history.FinalRate,
 		Losses:         append([]float32(nil), history.Losses...),
 		MSEs:           append([]float32(nil), history.MSEs...),
 		Rates:          append([]float32(nil), history.Rates...),
 		LearningRates:  append([]float32(nil), history.LearningRates...),
+		Lambdas:        append([]float32(nil), history.Lambdas...),
 		GradientNorms:  convertMantaReferenceGradientNorms(history.GradientNorms),
 		Checkpoints:    convertMantaReferenceCheckpoints(history.Checkpoints, opts.CheckpointPrefix),
 		CheckpointPath: opts.CheckpointPath,
@@ -185,6 +195,11 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		LearningRate:   opts.LearningRate,
 		LRSchedule:     opts.LearningRateSchedule,
 		FinalLR:        opts.FinalLearningRate,
+		LambdaSchedule: opts.LambdaSchedule,
+		InitialLambda:  opts.InitialLambda,
+		LambdaDelay:    opts.LambdaDelaySteps,
+		LambdaRamp:     opts.LambdaRampSteps,
+		FreezeAnalysis: opts.FreezeAnalysisSteps,
 	}, nil
 }
 
@@ -240,6 +255,7 @@ func convertMantaReferenceCheckpoints(in []mantamodels.MirageV1ReferenceCheckpoi
 			MSE:          item.MSE,
 			Rate:         item.Rate,
 			LearningRate: item.LearningRate,
+			Lambda:       item.Lambda,
 		}
 		if prefix != "" {
 			out[i].ModulePath, out[i].CheckpointPath = mantaReferenceCheckpointPaths(prefix, item.Step)
@@ -282,6 +298,10 @@ func normalizeMantaReferenceTrainOptions(opts MantaReferenceTrainOptions) MantaR
 	opts.LearningRateSchedule = strings.ToLower(strings.TrimSpace(opts.LearningRateSchedule))
 	if opts.LearningRateSchedule == "" {
 		opts.LearningRateSchedule = "constant"
+	}
+	opts.LambdaSchedule = strings.ToLower(strings.TrimSpace(opts.LambdaSchedule))
+	if opts.LambdaSchedule == "" {
+		opts.LambdaSchedule = "constant"
 	}
 	if opts.FinalLearningRate == 0 {
 		opts.FinalLearningRate = opts.LearningRate

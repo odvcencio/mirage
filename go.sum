@@ -2,6 +2,10 @@ github.com/klauspost/cpuid/v2 v2.0.9 h1:lgaqFMSdTdQYdZ04uHyN2d/eKdOMyi2YLSvlQIBF
 github.com/klauspost/cpuid/v2 v2.0.9/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
 github.com/odvcencio/manta v0.0.14-0.20260414092153-96159f683cd7 h1:dPsWq7ijEborbplyaxB2Baiyd3CobhyYuIhtKa+Nd4g=
 github.com/odvcencio/manta v0.0.14-0.20260414092153-96159f683cd7/go.mod h1:Ho6bhXd88kA2SE9vQr5rguafEzhbnbJV5580XMZBUI0=
+github.com/odvcencio/manta v0.0.14-0.20260414105611-6f01833b1019 h1:Z0lk680WI4xcLXo0HsKNBZ7VGgCs4Kydor1n8hVS69Y=
+github.com/odvcencio/manta v0.0.14-0.20260414105611-6f01833b1019/go.mod h1:Ho6bhXd88kA2SE9vQr5rguafEzhbnbJV5580XMZBUI0=
+github.com/odvcencio/manta v0.0.14-0.20260414105920-50bf9aa7028a h1:gerMVxmodoDaMzlkXRO9kvoRtBrUfk2HBvJWh2wJAag=
+github.com/odvcencio/manta v0.0.14-0.20260414105920-50bf9aa7028a/go.mod h1:Ho6bhXd88kA2SE9vQr5rguafEzhbnbJV5580XMZBUI0=
 github.com/odvcencio/mll v0.0.1 h1:rmsQoXQu3EnKLsoeX+q/w2XaPxoSKIZq2QJhG4lUO8E=
 github.com/odvcencio/mll v0.0.1/go.mod h1:Yjspjp/u0/Yap+hoDkJyJxjuyhFWcmLLJksgLi4WTWA=
 github.com/odvcencio/turboquant v0.1.2 h1:4GIs+6wQAd0Tz765mC+KDt2ESmBLfm1z7zVZj2tGrzc=

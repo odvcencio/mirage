@@ -69,7 +69,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  mirage init-manta -out mirage_v1.mll [-bits 2|4|8]")
 	fmt.Fprintln(w, "  mirage check-manta -in mirage_v1.mll [-entry train_step]")
 	fmt.Fprintln(w, "  mirage train-manta-smoke -in image.png [-in image2.png] [-steps 24] [-crop 16]")
-	fmt.Fprintln(w, "  mirage train-manta-kodak -dir kodak [-max-images 5] [-steps 200] [-crop 256] [-lambdas 0.001,0.01,0.1] [-lr-schedule constant|cosine] [-checkpoint-every 500]")
+	fmt.Fprintln(w, "  mirage train-manta-kodak -dir kodak [-max-images 5] [-steps 200] [-crop 256] [-lambdas 0.001,0.01,0.1] [-lr-schedule constant|cosine] [-lambda-schedule constant|linear] [-checkpoint-every 500]")
 }
 
 func runEncode(args []string) error {
@@ -513,11 +513,16 @@ func runTrainMantaKodak(args []string) error {
 	lr := fs.Float64("lr", 0.02, "reference SGD learning rate")
 	lrSchedule := fs.String("lr-schedule", "constant", "learning rate schedule: constant or cosine")
 	lrFinal := fs.Float64("lr-final", 1e-5, "final learning rate for cosine schedule")
+	lambdaSchedule := fs.String("lambda-schedule", "constant", "lambda schedule: constant or linear")
+	lambdaStart := fs.Float64("lambda-start", 0, "initial lambda for linear lambda schedule")
+	lambdaDelaySteps := fs.Int("lambda-delay-steps", 0, "steps to hold lambda-start before lambda ramp")
+	lambdaRampSteps := fs.Int("lambda-ramp-steps", 0, "steps to linearly ramp lambda to the target lambda")
 	optimizer := fs.String("optimizer", "sgd", "reference optimizer: sgd or adam")
 	adamBeta1 := fs.Float64("adam-beta1", 0.9, "Adam beta1")
 	adamBeta2 := fs.Float64("adam-beta2", 0.999, "Adam beta2")
 	adamEpsilon := fs.Float64("adam-epsilon", 1e-8, "Adam epsilon")
 	clip := fs.Float64("clip", 0.5, "gradient clipping threshold")
+	freezeAnalysisSteps := fs.Int("freeze-analysis-steps", 0, "freeze analysis/GDN parameters for the first N optimizer steps")
 	weightDecay := fs.Float64("weight-decay", 0, "SGD weight decay")
 	modelSeed := fs.Int64("model-seed", 0, "Manta graph seed")
 	weightSeed := fs.Int64("weight-seed", 7, "deterministic weight initialization seed")
@@ -601,10 +606,15 @@ func runTrainMantaKodak(args []string) error {
 			LearningRate:         float32(*lr),
 			LearningRateSchedule: *lrSchedule,
 			FinalLearningRate:    finalLearningRate,
+			LambdaSchedule:       *lambdaSchedule,
+			InitialLambda:        float32(*lambdaStart),
+			LambdaDelaySteps:     *lambdaDelaySteps,
+			LambdaRampSteps:      *lambdaRampSteps,
 			Optimizer:            *optimizer,
 			AdamBeta1:            float32(*adamBeta1),
 			AdamBeta2:            float32(*adamBeta2),
 			AdamEpsilon:          float32(*adamEpsilon),
+			FreezeAnalysisSteps:  *freezeAnalysisSteps,
 			GradientClip:         float32(*clip),
 			WeightDecay:          float32(*weightDecay),
 			CropSize:             *crop,
@@ -638,6 +648,11 @@ func runTrainMantaKodak(args []string) error {
 			LearningRate:    result.LearningRate,
 			LRSchedule:      result.LRSchedule,
 			FinalLR:         result.FinalLR,
+			LambdaSchedule:  result.LambdaSchedule,
+			InitialLambda:   result.InitialLambda,
+			LambdaDelay:     result.LambdaDelay,
+			LambdaRamp:      result.LambdaRamp,
+			FreezeAnalysis:  result.FreezeAnalysis,
 			InitialLoss:     result.InitialLoss,
 			FinalLoss:       result.FinalLoss,
 			DeltaLoss:       result.InitialLoss - result.FinalLoss,
@@ -658,7 +673,7 @@ func runTrainMantaKodak(args []string) error {
 		}
 		summary.Runs = append(summary.Runs, run)
 		if !*jsonOut {
-			fmt.Printf("lambda=%.6g images=%d training_crops=%d crop=%dx%d crop_mode=%s optimizer=%s lr_schedule=%s steps=%d checkpoints=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f grad_analysis=%.6f->%.6f grad_total=%.6f->%.6f duration=%s\n",
+			fmt.Printf("lambda=%.6g images=%d training_crops=%d crop=%dx%d crop_mode=%s optimizer=%s lr_schedule=%s lambda_schedule=%s freeze_analysis_steps=%d steps=%d checkpoints=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f grad_analysis=%.6f->%.6f grad_total=%.6f->%.6f duration=%s\n",
 				run.Lambda,
 				run.Images,
 				run.TrainingCrops,
@@ -667,6 +682,8 @@ func runTrainMantaKodak(args []string) error {
 				run.CropMode,
 				run.Optimizer,
 				run.LRSchedule,
+				run.LambdaSchedule,
+				run.FreezeAnalysis,
 				run.Steps,
 				len(run.Checkpoints),
 				run.InitialLoss,
@@ -979,6 +996,7 @@ func trainMantaCheckpointsFromResult(in []mirage.MantaReferenceCheckpoint) []tra
 			MSE:            item.MSE,
 			Rate:           item.Rate,
 			LearningRate:   item.LearningRate,
+			Lambda:         item.Lambda,
 			ModulePath:     item.ModulePath,
 			CheckpointPath: item.CheckpointPath,
 		}
@@ -1026,6 +1044,11 @@ type trainMantaKodakRun struct {
 	LearningRate       float32                 `json:"learning_rate"`
 	LRSchedule         string                  `json:"learning_rate_schedule"`
 	FinalLR            float32                 `json:"final_learning_rate"`
+	LambdaSchedule     string                  `json:"lambda_schedule"`
+	InitialLambda      float32                 `json:"initial_lambda"`
+	LambdaDelay        int                     `json:"lambda_delay_steps"`
+	LambdaRamp         int                     `json:"lambda_ramp_steps"`
+	FreezeAnalysis     int                     `json:"freeze_analysis_steps"`
 	InitialLoss        float32                 `json:"initial_loss"`
 	FinalLoss          float32                 `json:"final_loss"`
 	DeltaLoss          float32                 `json:"delta_loss"`
@@ -1049,6 +1072,7 @@ type trainMantaCheckpoint struct {
 	MSE            float32 `json:"mse"`
 	Rate           float32 `json:"rate"`
 	LearningRate   float32 `json:"learning_rate"`
+	Lambda         float32 `json:"lambda"`
 	ModulePath     string  `json:"module_path,omitempty"`
 	CheckpointPath string  `json:"checkpoint_path,omitempty"`
 }

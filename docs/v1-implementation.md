@@ -57,9 +57,12 @@ schema and host-reference runtime form:
   writes one `.mll` module plus one `.weights.mll` checkpoint per lambda
 - `train-manta-kodak` supports `-optimizer adam`, `-crop-mode random`,
   `-random-crops-per-image`, `-crop-seed`, `-resume`, `-lr-schedule cosine`,
-  `-lr-final`, and `-checkpoint-every` so longer reference runs can train on
-  many deterministic random crops, continue from an existing `.weights.mll`
-  checkpoint, and write eval-compatible intermediate checkpoints
+  `-lr-final`, `-lambda-schedule linear`, `-lambda-delay-steps`,
+  `-lambda-ramp-steps`, `-freeze-analysis-steps`, and `-checkpoint-every` so
+  longer reference runs can train on many deterministic random crops, continue
+  from an existing `.weights.mll` checkpoint, anneal rate pressure, freeze the
+  analysis path during entropy-model warmup, and write eval-compatible
+  intermediate checkpoints
 - `mirage encode`, `mirage decode`, and `mirage eval` accept
   `-manta-module` plus `-manta-weights` to run the learned Manta deployment
   path: `analyze`, arithmetic-coded `c_z`, hyperprior synthesis,
@@ -281,7 +284,7 @@ training-side fix should be a stabilization change such as lambda annealing,
 entropy-model warmup, per-group learning rates, or checkpoint selection, before
 capacity scaling is used as the main lever.
 
-The next stabilization experiment adds cosine learning-rate decay and frequent
+The first stabilization experiment adds cosine learning-rate decay and frequent
 checkpoints so peak PSNR can be selected directly from `.mrg` artifacts:
 
 ```bash
@@ -330,6 +333,31 @@ stabilize long-horizon training at this capacity. The result moves checkpoint
 selection from a hypothesis to a required training policy and points the next
 experiment at lambda annealing and/or entropy-model warmup rather than more
 flat long runs.
+
+The trainer now exposes those next stabilization controls directly:
+
+```bash
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 10 \
+  -steps 5000 \
+  -crop 256 \
+  -lambdas 0.01 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -optimizer adam \
+  -lr 0.001 \
+  -lr-schedule cosine \
+  -lr-final 0.00001 \
+  -lambda-schedule linear \
+  -lambda-delay-steps 1000 \
+  -lambda-ramp-steps 1000 \
+  -freeze-analysis-steps 500 \
+  -clip 1 \
+  -checkpoint-every 500 \
+  -out-dir /tmp/mirage-kodak-runs/adam-bpp-anneal-warmup-lambda-0p01
+```
 
 CompressAI baseline checkpoint download is wired for both Balle-style
 CompressAI reference families needed for v1 comparison: `bmshj2018-factorized`

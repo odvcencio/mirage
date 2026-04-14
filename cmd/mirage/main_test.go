@@ -92,6 +92,10 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 		"-lr", "0.001",
 		"-lr-schedule", "cosine",
 		"-lr-final", "0.0001",
+		"-lambda-schedule", "linear",
+		"-lambda-start", "0",
+		"-lambda-ramp-steps", "2",
+		"-freeze-analysis-steps", "1",
 		"-checkpoint-every", "1",
 		"-out-dir", outDir,
 	}); err != nil {
@@ -148,6 +152,15 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 	}
 	if got := summary.Runs[0].LRSchedule; got != "cosine" {
 		t.Fatalf("lr schedule = %q want cosine", got)
+	}
+	if got := summary.Runs[0].LambdaSchedule; got != "linear" {
+		t.Fatalf("lambda schedule = %q want linear", got)
+	}
+	if got := summary.Runs[0].LambdaRamp; got != 2 {
+		t.Fatalf("lambda ramp = %d want 2", got)
+	}
+	if got := summary.Runs[0].FreezeAnalysis; got != 1 {
+		t.Fatalf("freeze analysis steps = %d want 1", got)
 	}
 	if len(summary.Runs[0].Checkpoints) != 1 || summary.Runs[0].Checkpoints[0].Step != 1 {
 		t.Fatalf("unexpected checkpoints: %+v", summary.Runs[0].Checkpoints)

@@ -96,6 +96,10 @@ func TestTrainMantaReferenceImagesRandomCropsAndResume(t *testing.T) {
 		CheckpointPrefix:     checkpointPrefix,
 		LearningRateSchedule: "cosine",
 		FinalLearningRate:    0.001,
+		LambdaSchedule:       "linear",
+		InitialLambda:        0,
+		LambdaRampSteps:      2,
+		FreezeAnalysisSteps:  1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -105,6 +109,9 @@ func TestTrainMantaReferenceImagesRandomCropsAndResume(t *testing.T) {
 	}
 	if result.LRSchedule != "cosine" || result.FinalLR != 0.001 {
 		t.Fatalf("unexpected lr schedule metadata: %+v", result)
+	}
+	if result.LambdaSchedule != "linear" || result.LambdaRamp != 2 || result.FreezeAnalysis != 1 {
+		t.Fatalf("unexpected stabilization metadata: %+v", result)
 	}
 	if len(result.Checkpoints) != 1 || result.Checkpoints[0].Step != 1 {
 		t.Fatalf("unexpected checkpoints: %+v", result.Checkpoints)
