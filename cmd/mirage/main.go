@@ -69,7 +69,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  mirage init-manta -out mirage_v1.mll [-bits 2|4|8]")
 	fmt.Fprintln(w, "  mirage check-manta -in mirage_v1.mll [-entry train_step]")
 	fmt.Fprintln(w, "  mirage train-manta-smoke -in image.png [-in image2.png] [-steps 24] [-crop 16]")
-	fmt.Fprintln(w, "  mirage train-manta-kodak -dir kodak [-max-images 5] [-steps 200] [-crop 256] [-lambdas 0.001,0.01,0.1]")
+	fmt.Fprintln(w, "  mirage train-manta-kodak -dir kodak [-max-images 5] [-steps 200] [-crop 256] [-lambdas 0.001,0.01,0.1] [-lr-schedule constant|cosine] [-checkpoint-every 500]")
 }
 
 func runEncode(args []string) error {
@@ -511,6 +511,8 @@ func runTrainMantaKodak(args []string) error {
 	lambdaList := fs.String("lambdas", "0.001,0.01,0.1", "comma-separated lambda sweep")
 	factorizationFlag := fs.String("factorization", "categorical", "coordinate entropy factorization: categorical or bit-plane")
 	lr := fs.Float64("lr", 0.02, "reference SGD learning rate")
+	lrSchedule := fs.String("lr-schedule", "constant", "learning rate schedule: constant or cosine")
+	lrFinal := fs.Float64("lr-final", 1e-5, "final learning rate for cosine schedule")
 	optimizer := fs.String("optimizer", "sgd", "reference optimizer: sgd or adam")
 	adamBeta1 := fs.Float64("adam-beta1", 0.9, "Adam beta1")
 	adamBeta2 := fs.Float64("adam-beta2", 0.999, "Adam beta2")
@@ -523,6 +525,7 @@ func runTrainMantaKodak(args []string) error {
 	randomCrops := fs.Int("random-crops-per-image", 1, "random crops to materialize per decoded image when -crop-mode random")
 	cropSeed := fs.Int64("crop-seed", 0, "deterministic random crop seed")
 	resumePath := fs.String("resume", "", "optional .weights.mll checkpoint to resume from")
+	checkpointEvery := fs.Int("checkpoint-every", 0, "write eval-compatible intermediate checkpoints every N steps when -out-dir is set")
 	outDir := fs.String("out-dir", "", "optional directory for .mll modules, .weights.mll checkpoints, and summary.json")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON summary")
 	if err := fs.Parse(args); err != nil {
@@ -555,6 +558,10 @@ func runTrainMantaKodak(args []string) error {
 			return err
 		}
 	}
+	finalLearningRate := float32(*lrFinal)
+	if strings.EqualFold(*lrSchedule, "constant") {
+		finalLearningRate = float32(*lr)
+	}
 	summary := trainMantaKodakSummary{
 		Images:  append([]string(nil), paths...),
 		Formats: append([]string(nil), formats...),
@@ -576,63 +583,74 @@ func runTrainMantaKodak(args []string) error {
 		cfg.Lambda = lambda
 		cfg.LambdaSet = true
 		checkpointPath := ""
+		checkpointPrefix := ""
 		modulePath := ""
 		if *outDir != "" {
 			label := lambdaPathLabel(lambda)
-			modulePath = filepath.Join(*outDir, "mirage_v1_lambda_"+label+".mll")
-			checkpointPath = filepath.Join(*outDir, "mirage_v1_lambda_"+label+".weights.mll")
+			checkpointPrefix = filepath.Join(*outDir, "mirage_v1_lambda_"+label)
+			modulePath = checkpointPrefix + ".mll"
+			checkpointPath = checkpointPrefix + ".weights.mll"
 			if err := mirage.WriteMantaMLL(modulePath, cfg); err != nil {
 				return err
 			}
 		}
 		start := time.Now()
 		result, err := mirage.TrainMantaReferenceImages(images, mirage.MantaReferenceTrainOptions{
-			Config:         cfg,
-			Steps:          *steps,
-			LearningRate:   float32(*lr),
-			Optimizer:      *optimizer,
-			AdamBeta1:      float32(*adamBeta1),
-			AdamBeta2:      float32(*adamBeta2),
-			AdamEpsilon:    float32(*adamEpsilon),
-			GradientClip:   float32(*clip),
-			WeightDecay:    float32(*weightDecay),
-			CropSize:       *crop,
-			CropMode:       *cropMode,
-			RandomCrops:    *randomCrops,
-			CropSeed:       *cropSeed,
-			WeightSeed:     *weightSeed,
-			ResumePath:     *resumePath,
-			CheckpointPath: checkpointPath,
+			Config:               cfg,
+			Steps:                *steps,
+			LearningRate:         float32(*lr),
+			LearningRateSchedule: *lrSchedule,
+			FinalLearningRate:    finalLearningRate,
+			Optimizer:            *optimizer,
+			AdamBeta1:            float32(*adamBeta1),
+			AdamBeta2:            float32(*adamBeta2),
+			AdamEpsilon:          float32(*adamEpsilon),
+			GradientClip:         float32(*clip),
+			WeightDecay:          float32(*weightDecay),
+			CropSize:             *crop,
+			CropMode:             *cropMode,
+			RandomCrops:          *randomCrops,
+			CropSeed:             *cropSeed,
+			WeightSeed:           *weightSeed,
+			ResumePath:           *resumePath,
+			CheckpointPath:       checkpointPath,
+			CheckpointEvery:      *checkpointEvery,
+			CheckpointPrefix:     checkpointPrefix,
 		})
 		if err != nil {
 			return err
 		}
 		run := trainMantaKodakRun{
-			Lambda:         lambda,
-			Images:         result.Images,
-			Steps:          result.Steps,
-			CropWidth:      result.ImageWidth,
-			CropHeight:     result.ImageHeight,
-			LatentChannels: result.LatentChannels,
-			HyperChannels:  result.HyperChannels,
-			BitWidth:       result.BitWidth,
-			Factorization:  result.Factorization.String(),
-			CropMode:       result.CropMode,
-			TrainingCrops:  result.TrainingCrops,
-			RandomCrops:    result.RandomCrops,
-			CropSeed:       result.CropSeed,
-			Optimizer:      result.Optimizer,
-			InitialLoss:    result.InitialLoss,
-			FinalLoss:      result.FinalLoss,
-			DeltaLoss:      result.InitialLoss - result.FinalLoss,
-			InitialMSE:     result.InitialMSE,
-			FinalMSE:       result.FinalMSE,
-			InitialRate:    result.InitialRate,
-			FinalRate:      result.FinalRate,
-			Duration:       time.Since(start).String(),
-			ResumePath:     result.ResumePath,
-			ModulePath:     modulePath,
-			CheckpointPath: result.CheckpointPath,
+			Lambda:          lambda,
+			Images:          result.Images,
+			Steps:           result.Steps,
+			CropWidth:       result.ImageWidth,
+			CropHeight:      result.ImageHeight,
+			LatentChannels:  result.LatentChannels,
+			HyperChannels:   result.HyperChannels,
+			BitWidth:        result.BitWidth,
+			Factorization:   result.Factorization.String(),
+			CropMode:        result.CropMode,
+			TrainingCrops:   result.TrainingCrops,
+			RandomCrops:     result.RandomCrops,
+			CropSeed:        result.CropSeed,
+			Optimizer:       result.Optimizer,
+			LearningRate:    result.LearningRate,
+			LRSchedule:      result.LRSchedule,
+			FinalLR:         result.FinalLR,
+			InitialLoss:     result.InitialLoss,
+			FinalLoss:       result.FinalLoss,
+			DeltaLoss:       result.InitialLoss - result.FinalLoss,
+			InitialMSE:      result.InitialMSE,
+			FinalMSE:        result.FinalMSE,
+			InitialRate:     result.InitialRate,
+			FinalRate:       result.FinalRate,
+			Duration:        time.Since(start).String(),
+			ResumePath:      result.ResumePath,
+			ModulePath:      modulePath,
+			CheckpointPath:  result.CheckpointPath,
+			CheckpointEvery: *checkpointEvery,
+			Checkpoints:     trainMantaCheckpointsFromResult(result.Checkpoints),
 		}
 		if len(result.GradientNorms) > 0 {
 			run.FirstGradientNorms = trainMantaGradientNormsFromResult(result.GradientNorms[0])
@@ -640,7 +658,7 @@ func runTrainMantaKodak(args []string) error {
 		}
 		summary.Runs = append(summary.Runs, run)
 		if !*jsonOut {
-			fmt.Printf("lambda=%.6g images=%d training_crops=%d crop=%dx%d crop_mode=%s optimizer=%s steps=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f grad_analysis=%.6f->%.6f grad_total=%.6f->%.6f duration=%s\n",
+			fmt.Printf("lambda=%.6g images=%d training_crops=%d crop=%dx%d crop_mode=%s optimizer=%s lr_schedule=%s steps=%d checkpoints=%d loss=%.6f->%.6f delta=%.6f mse=%.6f->%.6f rate=%.6f->%.6f grad_analysis=%.6f->%.6f grad_total=%.6f->%.6f duration=%s\n",
 				run.Lambda,
 				run.Images,
 				run.TrainingCrops,
@@ -648,7 +666,9 @@ func runTrainMantaKodak(args []string) error {
 				run.CropHeight,
 				run.CropMode,
 				run.Optimizer,
+				run.LRSchedule,
 				run.Steps,
+				len(run.Checkpoints),
 				run.InitialLoss,
 				run.FinalLoss,
 				run.DeltaLoss,
@@ -947,6 +967,25 @@ func trainMantaGradientNormsFromResult(in mirage.MantaReferenceGradientNorms) tr
 	}
 }
 
+func trainMantaCheckpointsFromResult(in []mirage.MantaReferenceCheckpoint) []trainMantaCheckpoint {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]trainMantaCheckpoint, len(in))
+	for i, item := range in {
+		out[i] = trainMantaCheckpoint{
+			Step:           item.Step,
+			Loss:           item.Loss,
+			MSE:            item.MSE,
+			Rate:           item.Rate,
+			LearningRate:   item.LearningRate,
+			ModulePath:     item.ModulePath,
+			CheckpointPath: item.CheckpointPath,
+		}
+	}
+	return out
+}
+
 type stringListFlag []string
 
 func (f *stringListFlag) String() string {
@@ -984,6 +1023,9 @@ type trainMantaKodakRun struct {
 	RandomCrops        int                     `json:"random_crops_per_image"`
 	CropSeed           int64                   `json:"crop_seed"`
 	Optimizer          string                  `json:"optimizer"`
+	LearningRate       float32                 `json:"learning_rate"`
+	LRSchedule         string                  `json:"learning_rate_schedule"`
+	FinalLR            float32                 `json:"final_learning_rate"`
 	InitialLoss        float32                 `json:"initial_loss"`
 	FinalLoss          float32                 `json:"final_loss"`
 	DeltaLoss          float32                 `json:"delta_loss"`
@@ -997,6 +1039,18 @@ type trainMantaKodakRun struct {
 	ResumePath         string                  `json:"resume_path,omitempty"`
 	ModulePath         string                  `json:"module_path,omitempty"`
 	CheckpointPath     string                  `json:"checkpoint_path,omitempty"`
+	CheckpointEvery    int                     `json:"checkpoint_every,omitempty"`
+	Checkpoints        []trainMantaCheckpoint  `json:"checkpoints,omitempty"`
+}
+
+type trainMantaCheckpoint struct {
+	Step           int     `json:"step"`
+	Loss           float32 `json:"loss"`
+	MSE            float32 `json:"mse"`
+	Rate           float32 `json:"rate"`
+	LearningRate   float32 `json:"learning_rate"`
+	ModulePath     string  `json:"module_path,omitempty"`
+	CheckpointPath string  `json:"checkpoint_path,omitempty"`
 }
 
 type trainMantaGradientNorms struct {

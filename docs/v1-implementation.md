@@ -56,9 +56,10 @@ schema and host-reference runtime form:
   subset, runs a lambda sweep through the same reference autograd path, and
   writes one `.mll` module plus one `.weights.mll` checkpoint per lambda
 - `train-manta-kodak` supports `-optimizer adam`, `-crop-mode random`,
-  `-random-crops-per-image`, `-crop-seed`, and `-resume` so longer reference
-  runs can train on many deterministic random crops and continue from an
-  existing `.weights.mll` checkpoint
+  `-random-crops-per-image`, `-crop-seed`, `-resume`, `-lr-schedule cosine`,
+  `-lr-final`, and `-checkpoint-every` so longer reference runs can train on
+  many deterministic random crops, continue from an existing `.weights.mll`
+  checkpoint, and write eval-compatible intermediate checkpoints
 - `mirage encode`, `mirage decode`, and `mirage eval` accept
   `-manta-module` plus `-manta-weights` to run the learned Manta deployment
   path: `analyze`, arithmetic-coded `c_z`, hyperprior synthesis,
@@ -279,6 +280,32 @@ reconstruction and made mid/high-lambda entropy modeling worse. The next
 training-side fix should be a stabilization change such as lambda annealing,
 entropy-model warmup, per-group learning rates, or checkpoint selection, before
 capacity scaling is used as the main lever.
+
+The next stabilization experiment adds cosine learning-rate decay and frequent
+checkpoints so peak PSNR can be selected directly from `.mrg` artifacts:
+
+```bash
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 10 \
+  -steps 5000 \
+  -crop 256 \
+  -lambdas 0.01 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -optimizer adam \
+  -lr 0.001 \
+  -lr-schedule cosine \
+  -lr-final 0.00001 \
+  -clip 1 \
+  -checkpoint-every 500 \
+  -out-dir /tmp/mirage-kodak-runs/adam-bpp-cosine-lambda-0p01
+```
+
+Every checkpoint is named `mirage_v1_lambda_<lambda>_step_<step>.mll` plus a
+matching `.weights.mll`, so `mirage eval-manta-kodak -run-dir ...` can evaluate
+all saved training points without additional conversion.
 
 CompressAI baseline checkpoint download is wired for both Balle-style
 CompressAI reference families needed for v1 comparison: `bmshj2018-factorized`

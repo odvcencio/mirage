@@ -19,23 +19,27 @@ const defaultMantaReferenceTrainCropSize = 16
 // MantaReferenceTrainOptions controls a tiny image-backed reference training
 // run over the Manta Mirage v1 graph.
 type MantaReferenceTrainOptions struct {
-	Config         MantaConfig
-	Steps          int
-	LearningRate   float32
-	GradientClip   float32
-	WeightDecay    float32
-	MinGDNBeta     float32
-	Optimizer      string
-	AdamBeta1      float32
-	AdamBeta2      float32
-	AdamEpsilon    float32
-	CropSize       int
-	CropMode       string
-	RandomCrops    int
-	CropSeed       int64
-	WeightSeed     int64
-	ResumePath     string
-	CheckpointPath string
+	Config               MantaConfig
+	Steps                int
+	LearningRate         float32
+	LearningRateSchedule string
+	FinalLearningRate    float32
+	GradientClip         float32
+	WeightDecay          float32
+	MinGDNBeta           float32
+	Optimizer            string
+	AdamBeta1            float32
+	AdamBeta2            float32
+	AdamEpsilon          float32
+	CropSize             int
+	CropMode             string
+	RandomCrops          int
+	CropSeed             int64
+	WeightSeed           int64
+	ResumePath           string
+	CheckpointPath       string
+	CheckpointEvery      int
+	CheckpointPrefix     string
 }
 
 // MantaReferenceTrainResult summarizes convergence for one reference run.
@@ -63,9 +67,26 @@ type MantaReferenceTrainResult struct {
 	Losses         []float32
 	MSEs           []float32
 	Rates          []float32
+	LearningRates  []float32
 	GradientNorms  []MantaReferenceGradientNorms
+	Checkpoints    []MantaReferenceCheckpoint
 	CheckpointPath string
 	Optimizer      string
+	LearningRate   float32
+	LRSchedule     string
+	FinalLR        float32
+}
+
+// MantaReferenceCheckpoint records metrics and optional artifact paths for a
+// periodic reference training checkpoint.
+type MantaReferenceCheckpoint struct {
+	Step           int
+	Loss           float32
+	MSE            float32
+	Rate           float32
+	LearningRate   float32
+	ModulePath     string
+	CheckpointPath string
 }
 
 // MantaReferenceGradientNorms records raw reference autograd gradient L2 norms
@@ -104,16 +125,21 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
 	}
+	checkpointFunc := mantaReferenceCheckpointFunc(opts)
 	history, err := mantamodels.TrainMirageV1Reference(mod, weights, tensors, mantamodels.MirageV1ReferenceTrainConfig{
-		Steps:        opts.Steps,
-		LearningRate: opts.LearningRate,
-		GradientClip: opts.GradientClip,
-		WeightDecay:  opts.WeightDecay,
-		MinGDNBeta:   opts.MinGDNBeta,
-		Optimizer:    opts.Optimizer,
-		AdamBeta1:    opts.AdamBeta1,
-		AdamBeta2:    opts.AdamBeta2,
-		AdamEpsilon:  opts.AdamEpsilon,
+		Steps:                opts.Steps,
+		LearningRate:         opts.LearningRate,
+		LearningRateSchedule: opts.LearningRateSchedule,
+		FinalLearningRate:    opts.FinalLearningRate,
+		GradientClip:         opts.GradientClip,
+		WeightDecay:          opts.WeightDecay,
+		MinGDNBeta:           opts.MinGDNBeta,
+		Optimizer:            opts.Optimizer,
+		AdamBeta1:            opts.AdamBeta1,
+		AdamBeta2:            opts.AdamBeta2,
+		AdamEpsilon:          opts.AdamEpsilon,
+		CheckpointEvery:      opts.CheckpointEvery,
+		CheckpointFunc:       checkpointFunc,
 	})
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
@@ -151,10 +177,36 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		Losses:         append([]float32(nil), history.Losses...),
 		MSEs:           append([]float32(nil), history.MSEs...),
 		Rates:          append([]float32(nil), history.Rates...),
+		LearningRates:  append([]float32(nil), history.LearningRates...),
 		GradientNorms:  convertMantaReferenceGradientNorms(history.GradientNorms),
+		Checkpoints:    convertMantaReferenceCheckpoints(history.Checkpoints, opts.CheckpointPrefix),
 		CheckpointPath: opts.CheckpointPath,
 		Optimizer:      opts.Optimizer,
+		LearningRate:   opts.LearningRate,
+		LRSchedule:     opts.LearningRateSchedule,
+		FinalLR:        opts.FinalLearningRate,
 	}, nil
+}
+
+func mantaReferenceCheckpointFunc(opts MantaReferenceTrainOptions) func(mantamodels.MirageV1ReferenceCheckpoint, map[string]*backend.Tensor) error {
+	if opts.CheckpointEvery <= 0 || opts.CheckpointPrefix == "" {
+		return nil
+	}
+	return func(checkpoint mantamodels.MirageV1ReferenceCheckpoint, weights map[string]*backend.Tensor) error {
+		modulePath, checkpointPath := mantaReferenceCheckpointPaths(opts.CheckpointPrefix, checkpoint.Step)
+		if err := WriteMantaMLL(modulePath, opts.Config); err != nil {
+			return err
+		}
+		if err := mantaruntime.NewWeightFile(weights).WriteFile(checkpointPath); err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+func mantaReferenceCheckpointPaths(prefix string, step int) (string, string) {
+	stem := fmt.Sprintf("%s_step_%06d", prefix, step)
+	return stem + ".mll", stem + ".weights.mll"
 }
 
 func convertMantaReferenceGradientNorms(in []mantamodels.MirageV1ReferenceGradientNorms) []MantaReferenceGradientNorms {
@@ -171,6 +223,26 @@ func convertMantaReferenceGradientNorms(in []mantamodels.MirageV1ReferenceGradie
 			Synthesis:      item.Synthesis,
 			Prior:          item.Prior,
 			Other:          item.Other,
+		}
+	}
+	return out
+}
+
+func convertMantaReferenceCheckpoints(in []mantamodels.MirageV1ReferenceCheckpoint, prefix string) []MantaReferenceCheckpoint {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]MantaReferenceCheckpoint, len(in))
+	for i, item := range in {
+		out[i] = MantaReferenceCheckpoint{
+			Step:         item.Step,
+			Loss:         item.Loss,
+			MSE:          item.MSE,
+			Rate:         item.Rate,
+			LearningRate: item.LearningRate,
+		}
+		if prefix != "" {
+			out[i].ModulePath, out[i].CheckpointPath = mantaReferenceCheckpointPaths(prefix, item.Step)
 		}
 	}
 	return out
@@ -206,6 +278,13 @@ func normalizeMantaReferenceTrainOptions(opts MantaReferenceTrainOptions) MantaR
 	}
 	if opts.LearningRate == 0 {
 		opts.LearningRate = 0.01
+	}
+	opts.LearningRateSchedule = strings.ToLower(strings.TrimSpace(opts.LearningRateSchedule))
+	if opts.LearningRateSchedule == "" {
+		opts.LearningRateSchedule = "constant"
+	}
+	if opts.FinalLearningRate == 0 {
+		opts.FinalLearningRate = opts.LearningRate
 	}
 	opts.Optimizer = strings.ToLower(strings.TrimSpace(opts.Optimizer))
 	if opts.Optimizer == "" {

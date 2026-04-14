@@ -4,6 +4,7 @@ package mirage
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -74,6 +75,7 @@ func TestTrainMantaReferenceImagesRandomCropsAndResume(t *testing.T) {
 	img := mantaReferenceTrainPNGSource(t, 32, 32)
 	dir := t.TempDir()
 	checkpointPath := filepath.Join(dir, "checkpoint.weights.mll")
+	checkpointPrefix := filepath.Join(dir, "checkpoint")
 	result, err := TrainMantaReferenceImages([]RGBImage{img}, MantaReferenceTrainOptions{
 		Config: MantaConfig{
 			LatentChannels: 4,
@@ -81,21 +83,40 @@ func TestTrainMantaReferenceImagesRandomCropsAndResume(t *testing.T) {
 			BitWidth:       2,
 			Lambda:         0.001,
 		},
-		Steps:          1,
-		LearningRate:   0.02,
-		GradientClip:   0.5,
-		CropSize:       16,
-		CropMode:       "random",
-		RandomCrops:    3,
-		CropSeed:       11,
-		WeightSeed:     7,
-		CheckpointPath: checkpointPath,
+		Steps:                1,
+		LearningRate:         0.02,
+		GradientClip:         0.5,
+		CropSize:             16,
+		CropMode:             "random",
+		RandomCrops:          3,
+		CropSeed:             11,
+		WeightSeed:           7,
+		CheckpointPath:       checkpointPath,
+		CheckpointEvery:      1,
+		CheckpointPrefix:     checkpointPrefix,
+		LearningRateSchedule: "cosine",
+		FinalLearningRate:    0.001,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.CropMode != "random" || result.TrainingCrops != 3 || result.RandomCrops != 3 || result.CropSeed != 11 {
 		t.Fatalf("unexpected random crop metadata: %+v", result)
+	}
+	if result.LRSchedule != "cosine" || result.FinalLR != 0.001 {
+		t.Fatalf("unexpected lr schedule metadata: %+v", result)
+	}
+	if len(result.Checkpoints) != 1 || result.Checkpoints[0].Step != 1 {
+		t.Fatalf("unexpected checkpoints: %+v", result.Checkpoints)
+	}
+	for _, path := range []string{
+		checkpointPath,
+		filepath.Join(dir, "checkpoint_step_000001.mll"),
+		filepath.Join(dir, "checkpoint_step_000001.weights.mll"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected checkpoint output %s: %v", path, err)
+		}
 	}
 	resumed, err := TrainMantaReferenceImages([]RGBImage{img}, MantaReferenceTrainOptions{
 		Config: MantaConfig{

@@ -88,6 +88,11 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 		"-bits", "2",
 		"-latent-channels", "4",
 		"-hyper-channels", "4",
+		"-optimizer", "adam",
+		"-lr", "0.001",
+		"-lr-schedule", "cosine",
+		"-lr-final", "0.0001",
+		"-checkpoint-every", "1",
 		"-out-dir", outDir,
 	}); err != nil {
 		t.Fatal(err)
@@ -96,8 +101,12 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 		filepath.Join(outDir, "summary.json"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p001.mll"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p001.weights.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p001_step_000001.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p001_step_000001.weights.mll"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p01.mll"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p01.weights.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p01_step_000001.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p01_step_000001.weights.mll"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected output %s: %v", path, err)
@@ -136,6 +145,12 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 	}
 	if got := summary.Runs[0].CropSeed; got != 99 {
 		t.Fatalf("crop seed = %d want 99", got)
+	}
+	if got := summary.Runs[0].LRSchedule; got != "cosine" {
+		t.Fatalf("lr schedule = %q want cosine", got)
+	}
+	if len(summary.Runs[0].Checkpoints) != 1 || summary.Runs[0].Checkpoints[0].Step != 1 {
+		t.Fatalf("unexpected checkpoints: %+v", summary.Runs[0].Checkpoints)
 	}
 }
 
