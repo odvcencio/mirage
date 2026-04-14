@@ -380,10 +380,61 @@ the target `0.01` over the next 1000 steps. It completed in `1h12m44s`:
 This improves the long-horizon endpoint over cosine decay alone (`18.0183 dB`
 vs. `12.7561 dB`) but does not recover the earlier best artifact
 (`22.0125 dB` at `0.3213 bpp`). The step-2500 rate spike shows that Adam is
-still crossing an unstable region after the ramp reaches full lambda. The next
-controlled experiments should isolate the variables: lambda annealing without
-analysis freeze, and/or a faster LR decay or hard LR drop after the 1500-step
-basin.
+still crossing an unstable region after the ramp reaches full lambda.
+
+The follow-up short-schedule experiment cuts the run before the unstable
+long-horizon regime and decays the learning rate more aggressively:
+
+```bash
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 10 \
+  -steps 2000 \
+  -crop 256 \
+  -lambdas 0.01 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -optimizer adam \
+  -lr 0.001 \
+  -lr-schedule cosine \
+  -lr-final 0.000001 \
+  -clip 1 \
+  -checkpoint-every 100 \
+  -out-dir /tmp/mirage-kodak-runs/adam-bpp-short-cosine-lambda-0p01
+```
+
+It completed in `33m27s` and produced the current best v1 artifact:
+
+| checkpoint | train MSE | train rate | lr | avg PSNR | avg bpp | avg bytes |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 0.020052 | 19827.486 | 0.00099397 | 17.4895 | 0.3444 | 2821.3 |
+| 200 | 0.018348 | 20838.121 | 0.00097577 | 17.9432 | 0.3598 | 2947.8 |
+| 300 | 0.014122 | 21419.768 | 0.00094586 | 19.0874 | 0.3687 | 3020.2 |
+| 400 | 0.012362 | 20974.459 | 0.00090497 | 19.6616 | 0.3617 | 2963.0 |
+| 500 | 0.010515 | 21009.377 | 0.00085412 | 20.4900 | 0.3624 | 2969.1 |
+| 600 | 0.010408 | 21069.781 | 0.00079454 | 20.4141 | 0.3634 | 2976.9 |
+| 700 | 0.009116 | 20584.640 | 0.00072772 | 21.1932 | 0.3560 | 2916.3 |
+| 800 | 0.008730 | 20222.045 | 0.00065530 | 21.4212 | 0.3504 | 2870.8 |
+| 900 | 0.008424 | 19947.074 | 0.00057907 | 21.6133 | 0.3463 | 2836.5 |
+| 1000 | 0.008140 | 19747.115 | 0.00050089 | 21.7783 | 0.3432 | 2811.3 |
+| 1100 | 0.007918 | 19620.130 | 0.00042271 | 21.9002 | 0.3412 | 2795.4 |
+| 1200 | 0.007734 | 19538.850 | 0.00034644 | 21.9974 | 0.3400 | 2785.6 |
+| 1300 | 0.007586 | 19464.803 | 0.00027398 | 22.0840 | 0.3389 | 2775.9 |
+| 1400 | 0.007471 | 19397.098 | 0.00020709 | 22.1442 | 0.3378 | 2767.3 |
+| 1500 | 0.007386 | 19340.295 | 0.00014744 | 22.1912 | 0.3370 | 2760.6 |
+| 1600 | 0.007329 | 19300.730 | 0.00009649 | 22.2161 | 0.3364 | 2755.7 |
+| 1700 | 0.007294 | 19263.861 | 0.00005550 | 22.2370 | 0.3358 | 2750.7 |
+| 1800 | 0.007275 | 19241.354 | 0.00002547 | 22.2473 | 0.3355 | 2748.1 |
+| 1900 | 0.007267 | 19242.170 | 0.00000716 | 22.2542 | 0.3355 | 2748.3 |
+| 2000 | 0.007266 | 19241.043 | 0.00000100 | 22.2543 | 0.3355 | 2748.2 |
+
+This is a Pareto improvement over the previous best 1k Adam artifact
+(`21.8310 dB` at `0.3498 bpp`). Relative to the 5k cosine checkpoint
+(`22.0125 dB` at `0.3213 bpp`), it buys `+0.24 dB` for `+0.014 bpp`; the key
+improvement is that the endpoint remains at the best artifact point instead of
+requiring early stopping. This 2000-step short schedule is the current v1
+reference training recipe for capacity-scaling experiments.
 
 CompressAI baseline checkpoint download is wired for both Balle-style
 CompressAI reference families needed for v1 comparison: `bmshj2018-factorized`
