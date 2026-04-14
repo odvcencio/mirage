@@ -65,7 +65,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "  mirage info   -in image.mrg")
 	fmt.Fprintln(w, "  mirage eval   -source image.png -mrg image.mrg")
 	fmt.Fprintln(w, "  mirage eval-manta-kodak -dir kodak -run-dir runs/kodak-reference [-out-dir eval]")
-	fmt.Fprintln(w, "  mirage fetch-compressai-baseline -out-dir baselines/compressai [-qualities 1,2,3,4,5,6,7,8]")
+	fmt.Fprintln(w, "  mirage fetch-compressai-baseline -out-dir baselines/compressai [-architectures bmshj2018-factorized,bmshj2018-hyperprior] [-qualities 1,2,3,4,5,6,7,8]")
 	fmt.Fprintln(w, "  mirage init-manta -out mirage_v1.mll [-bits 2|4|8]")
 	fmt.Fprintln(w, "  mirage check-manta -in mirage_v1.mll [-entry train_step]")
 	fmt.Fprintln(w, "  mirage train-manta-smoke -in image.png [-in image2.png] [-steps 24] [-crop 16]")

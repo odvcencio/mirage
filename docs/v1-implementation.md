@@ -244,20 +244,23 @@ The evaluation harness writes one `.mrg` per model/image pair plus
 `eval_summary.json`, so later runs can compare training telemetry against actual
 bitstream artifacts instead of proxy losses.
 
-CompressAI baseline checkpoint download is also wired for the Balle 2018
-factorized-prior MSE models:
+CompressAI baseline checkpoint download is wired for both Balle-style
+CompressAI reference families needed for v1 comparison: `bmshj2018-factorized`
+as the no-hyperprior lower bar, and `bmshj2018-hyperprior` as the
+apples-to-apples hyperprior reference:
 
 ```bash
 mirage fetch-compressai-baseline \
   -out-dir /tmp/mirage-baselines/compressai \
+  -architectures bmshj2018-factorized,bmshj2018-hyperprior \
   -qualities 1,2,3,4,5,6,7,8 \
   -timeout 1h
 ```
 
-The first download completed all eight official checkpoints and wrote
-`/tmp/mirage-baselines/compressai/manifest.json`. The manifest records the
-source URL, checkpoint URLs, byte counts, and SHA-256 hashes. Total downloaded
-checkpoint size is about `141M`.
+The first two-architecture download completed all 16 official checkpoints and
+wrote `/tmp/mirage-baselines/compressai/manifest.json`. The manifest records the
+source URL, architecture name, checkpoint URLs, byte counts, and SHA-256 hashes.
+The downloaded baseline directory is `380M`.
 
 ## Deployment Round Trip
 

@@ -99,10 +99,23 @@ func TestRunFetchCompressAIBaselineManifestOnly(t *testing.T) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Architecture != "bmshj2018-factorized" || manifest.Metric != "mse" {
+	if manifest.Metric != "mse" {
 		t.Fatalf("unexpected manifest metadata: %+v", manifest)
 	}
-	if len(manifest.Checkpoints) != 2 || manifest.Checkpoints[0].Quality != 1 || manifest.Checkpoints[1].Quality != 3 {
+	if len(manifest.Architectures) != 2 ||
+		manifest.Architectures[0] != "bmshj2018-factorized" ||
+		manifest.Architectures[1] != "bmshj2018-hyperprior" {
+		t.Fatalf("unexpected architectures: %+v", manifest.Architectures)
+	}
+	if len(manifest.Checkpoints) != 4 ||
+		manifest.Checkpoints[0].Architecture != "bmshj2018-factorized" ||
+		manifest.Checkpoints[0].Quality != 1 ||
+		manifest.Checkpoints[1].Architecture != "bmshj2018-factorized" ||
+		manifest.Checkpoints[1].Quality != 3 ||
+		manifest.Checkpoints[2].Architecture != "bmshj2018-hyperprior" ||
+		manifest.Checkpoints[2].Quality != 1 ||
+		manifest.Checkpoints[3].Architecture != "bmshj2018-hyperprior" ||
+		manifest.Checkpoints[3].Quality != 3 {
 		t.Fatalf("unexpected checkpoints: %+v", manifest.Checkpoints)
 	}
 	if manifest.Checkpoints[0].Downloaded {
