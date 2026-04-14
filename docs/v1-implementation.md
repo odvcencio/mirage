@@ -436,6 +436,73 @@ improvement is that the endpoint remains at the best artifact point instead of
 requiring early stopping. This 2000-step short schedule is the current v1
 reference training recipe for capacity-scaling experiments.
 
+The same short schedule was then run as a three-point lambda sweep, using one
+process per lambda:
+
+```bash
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 10 \
+  -steps 2000 \
+  -crop 256 \
+  -lambdas 0.001 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -optimizer adam \
+  -lr 0.001 \
+  -lr-schedule cosine \
+  -lr-final 0.000001 \
+  -clip 1 \
+  -checkpoint-every 100 \
+  -out-dir /tmp/mirage-kodak-runs/adam-bpp-short-cosine-lambda-0p001
+
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 10 \
+  -steps 2000 \
+  -crop 256 \
+  -lambdas 0.1 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -optimizer adam \
+  -lr 0.001 \
+  -lr-schedule cosine \
+  -lr-final 0.000001 \
+  -clip 1 \
+  -checkpoint-every 100 \
+  -out-dir /tmp/mirage-kodak-runs/adam-bpp-short-cosine-lambda-0p1
+```
+
+The lambda `0.01` leg is the run above. The full sweep finished on
+2026-04-14:
+
+| lambda | endpoint train MSE | endpoint train rate | endpoint PSNR | endpoint bpp | endpoint bytes | duration |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.001 | 0.007409 | 20123.574 | 22.1936 | 0.3490 | 2858.6 | 38m26s |
+| 0.01 | 0.007266 | 19241.043 | 22.2543 | 0.3355 | 2748.2 | 33m27s |
+| 0.1 | 0.036206 | 17968.035 | 14.9160 | 0.3157 | 2586.5 | 38m31s |
+
+This confirms that the short recipe stabilizes the low and mid lambda endpoints.
+At this capacity, lambda `0.01` dominates lambda `0.001`: it lands at slightly
+higher PSNR and lower container bpp. The high lambda endpoint is still a
+posterior-collapse point, so the endpoint-only three-point curve is not yet the
+final v1 RD plot.
+
+The high lambda run did pass through usable checkpoints before collapse:
+
+| lambda | checkpoint | avg PSNR | avg bpp | avg bytes | note |
+|---:|---:|---:|---:|---:|---|
+| 0.1 | 700 | 20.8812 | 0.3464 | 2838.1 | highest PSNR checkpoint |
+| 0.1 | 800 | 20.6413 | 0.3152 | 2582.1 | useful low-rate checkpoint |
+| 0.1 | 1800 | 14.7779 | 0.2821 | 2311.0 | lower rate but collapsed reconstruction |
+
+For the next v1 scaling step, lambda `0.01` remains the stable baseline. High
+lambda should be treated as a checkpoint-selection candidate until random crops
+and/or capacity scaling show that the low-rate branch can remain stable at the
+endpoint.
+
 CompressAI baseline checkpoint download is wired for both Balle-style
 CompressAI reference families needed for v1 comparison: `bmshj2018-factorized`
 as the no-hyperprior lower bar, and `bmshj2018-hyperprior` as the

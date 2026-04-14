@@ -29,6 +29,11 @@ host/WASM code keeps owning `.mrg` parsing, arithmetic coding, q_norm, and image
 I/O. Mirage depends on public Manta and TurboQuant module versions; there are no
 local module replaces in the standalone workspace.
 
+Current v1 training baseline: the 2000-step Adam/cosine reference recipe on 10
+Kodak center crops reaches `22.2543 dB` at `0.3355 bpp` for lambda `0.01`.
+The same recipe is stable for lambda `0.001`; lambda `0.1` still needs
+checkpoint selection at this capacity.
+
 ## Quick Start
 
 ```bash
