@@ -12,6 +12,8 @@ github.com/odvcencio/manta v0.0.14-0.20260415024122-feb9b854e600 h1:fUr2Czd6LpGq
 github.com/odvcencio/manta v0.0.14-0.20260415024122-feb9b854e600/go.mod h1:Ho6bhXd88kA2SE9vQr5rguafEzhbnbJV5580XMZBUI0=
 github.com/odvcencio/manta v0.0.14-0.20260415025015-f6183a8b0927 h1:Meh6A72ADXh6pPSqsyPKMg1NeaSJ/tmVDt862KtXU/8=
 github.com/odvcencio/manta v0.0.14-0.20260415025015-f6183a8b0927/go.mod h1:Ho6bhXd88kA2SE9vQr5rguafEzhbnbJV5580XMZBUI0=
+github.com/odvcencio/manta v0.0.14-0.20260415025650-fd6153252d7f h1:oebO1uBOZ+TjoBQRGJT3JuA7UCZJ8KejxY0kLzWS9o4=
+github.com/odvcencio/manta v0.0.14-0.20260415025650-fd6153252d7f/go.mod h1:Ho6bhXd88kA2SE9vQr5rguafEzhbnbJV5580XMZBUI0=
 github.com/odvcencio/mll v0.0.1 h1:rmsQoXQu3EnKLsoeX+q/w2XaPxoSKIZq2QJhG4lUO8E=
 github.com/odvcencio/mll v0.0.1/go.mod h1:Yjspjp/u0/Yap+hoDkJyJxjuyhFWcmLLJksgLi4WTWA=
 github.com/odvcencio/turboquant v0.1.2 h1:4GIs+6wQAd0Tz765mC+KDt2ESmBLfm1z7zVZj2tGrzc=
