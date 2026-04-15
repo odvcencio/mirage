@@ -35,6 +35,9 @@ The same recipe is stable for lambda `0.001`; lambda `0.1` still needs
 checkpoint selection at this capacity. On the all-24 Kodak eval set, the
 center-crop checkpoint reaches `21.7257 dB` at `0.3398 bpp`; a one-random-crop
 transfer run is stable but currently lower at `21.5218 dB` and `0.3481 bpp`.
+An 8-bit/32-latent/16-hyper capacity smoke reaches `21.8730 dB` by step 1000
+but spends `1.2173 bpp`, so wider capacity needs stronger rate calibration or
+GPU-backed iteration before a full sweep.
 
 ## Quick Start
 

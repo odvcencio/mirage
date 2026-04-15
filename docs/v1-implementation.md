@@ -545,6 +545,51 @@ same 24-image eval set. The useful signal is stability rather than quality:
 random crops did not collapse, but they likely need either more steps or a
 larger model before they pay back.
 
+The first larger-capacity smoke kept the random-crop setup and lambda `0.01`,
+then bumped the shape to 8-bit TurboQuant codes with 32 latent channels and 16
+hyperprior channels:
+
+```bash
+mirage train-manta-kodak \
+  -dir /tmp/mirage-kodak-all-24 \
+  -max-images 24 \
+  -steps 2000 \
+  -crop 256 \
+  -crop-mode random \
+  -random-crops-per-image 1 \
+  -crop-seed 20260414 \
+  -lambdas 0.01 \
+  -bits 8 \
+  -latent-channels 32 \
+  -hyper-channels 16 \
+  -optimizer adam \
+  -lr 0.001 \
+  -lr-schedule cosine \
+  -lr-final 0.000001 \
+  -clip 1 \
+  -checkpoint-every 100 \
+  -out-dir /tmp/mirage-kodak-runs/adam-bpp-short-cosine-random-capacity32-lambda-0p01
+```
+
+The CPU reference path was much slower at this width. The run wrote checkpoints
+through step 1000 in about 100 minutes and was stopped there because the
+intermediate RD points were not efficient enough to justify spending several
+more CPU hours on the endpoint:
+
+| capacity | checkpoint | eval images | avg MSE | avg PSNR | avg bpp | avg bytes |
+|---|---:|---:|---:|---:|---:|---:|
+| 4-bit, 16 latent, 8 hyper | 2000 | 24 | 0.008150 | 21.5218 | 0.3481 | 2851.6 |
+| 8-bit, 32 latent, 16 hyper | 500 | 24 | 0.013258 | 19.3885 | 1.2436 | 10187.5 |
+| 8-bit, 32 latent, 16 hyper | 1000 | 24 | 0.007538 | 21.8730 | 1.2173 | 9972.0 |
+
+This confirms that the wider model can buy reconstruction quality, but at
+lambda `0.01` it does so by spending far too much rate. At step 1000 it is only
+`+0.15 dB` ahead of the 4-bit center-crop checkpoint on the same 24-image eval
+set, while spending about `+0.88 bpp`. The next capacity experiment should not
+be a full lambda `0.01` endpoint run on the CPU reference path. It needs either
+GPU/WebGPU training acceleration, a higher-rate-pressure lambda for the wider
+shape, or a smaller intermediate capacity before launching a full RD sweep.
+
 CompressAI baseline checkpoint download is wired for both Balle-style
 CompressAI reference families needed for v1 comparison: `bmshj2018-factorized`
 as the no-hyperprior lower bar, and `bmshj2018-hyperprior` as the
