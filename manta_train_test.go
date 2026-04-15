@@ -49,6 +49,9 @@ func TestTrainMantaReferenceImagesFromDecodedPNGConverges(t *testing.T) {
 	if result.ImageWidth != 16 || result.ImageHeight != 16 {
 		t.Fatalf("crop shape = %dx%d want 16x16", result.ImageWidth, result.ImageHeight)
 	}
+	if result.Backend != "reference" {
+		t.Fatalf("backend = %q want reference", result.Backend)
+	}
 	if len(result.Losses) != 25 {
 		t.Fatalf("loss history length = %d want 25", len(result.Losses))
 	}
@@ -68,6 +71,17 @@ func TestTrainMantaReferenceImagesRejectsSmallImage(t *testing.T) {
 	_, err := TrainMantaReferenceImages([]RGBImage{img}, MantaReferenceTrainOptions{CropSize: 16})
 	if err == nil {
 		t.Fatal("expected small image error")
+	}
+}
+
+func TestTrainMantaReferenceImagesRejectsUnknownBackend(t *testing.T) {
+	img := mantaReferenceTrainPNGSource(t, 16, 16)
+	_, err := TrainMantaReferenceImages([]RGBImage{img}, MantaReferenceTrainOptions{
+		CropSize: 16,
+		Backend:  "bogus",
+	})
+	if err == nil {
+		t.Fatal("expected unknown backend error")
 	}
 }
 

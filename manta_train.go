@@ -12,6 +12,7 @@ import (
 	mantamodels "github.com/odvcencio/manta/models"
 	mantaruntime "github.com/odvcencio/manta/runtime"
 	"github.com/odvcencio/manta/runtime/backend"
+	_ "github.com/odvcencio/manta/runtime/backends/cuda"
 )
 
 const defaultMantaReferenceTrainCropSize = 16
@@ -42,6 +43,7 @@ type MantaReferenceTrainOptions struct {
 	CropSeed             int64
 	WeightSeed           int64
 	ResumePath           string
+	Backend              string
 	CheckpointPath       string
 	CheckpointEvery      int
 	CheckpointPrefix     string
@@ -63,6 +65,7 @@ type MantaReferenceTrainResult struct {
 	RandomCrops    int
 	CropSeed       int64
 	ResumePath     string
+	Backend        string
 	InitialLoss    float32
 	FinalLoss      float32
 	InitialMSE     float32
@@ -133,6 +136,13 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
 	}
+	imageGradAccel, err := mantaReferenceImageGradAccelerator(opts.Backend)
+	if err != nil {
+		return MantaReferenceTrainResult{}, err
+	}
+	if imageGradAccel != nil {
+		defer imageGradAccel.Close()
+	}
 	checkpointFunc := mantaReferenceCheckpointFunc(opts)
 	history, err := mantamodels.TrainMirageV1Reference(mod, weights, tensors, mantamodels.MirageV1ReferenceTrainConfig{
 		Steps:                opts.Steps,
@@ -153,6 +163,7 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		FreezeAnalysisSteps:  opts.FreezeAnalysisSteps,
 		CheckpointEvery:      opts.CheckpointEvery,
 		CheckpointFunc:       checkpointFunc,
+		ImageGradAccelerator: imageGradAccel,
 	})
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
@@ -177,6 +188,7 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		RandomCrops:    opts.RandomCrops,
 		CropSeed:       opts.CropSeed,
 		ResumePath:     opts.ResumePath,
+		Backend:        opts.Backend,
 		InitialLoss:    history.InitialLoss,
 		FinalLoss:      history.FinalLoss,
 		InitialMSE:     history.InitialMSE,
@@ -265,6 +277,10 @@ func convertMantaReferenceCheckpoints(in []mantamodels.MirageV1ReferenceCheckpoi
 }
 
 func normalizeMantaReferenceTrainOptions(opts MantaReferenceTrainOptions) MantaReferenceTrainOptions {
+	opts.Backend = strings.ToLower(strings.TrimSpace(opts.Backend))
+	if opts.Backend == "" {
+		opts.Backend = "reference"
+	}
 	if opts.CropSize == 0 {
 		opts.CropSize = defaultMantaReferenceTrainCropSize
 	}
@@ -327,6 +343,24 @@ func normalizeMantaReferenceTrainOptions(opts MantaReferenceTrainOptions) MantaR
 		opts.WeightSeed = DefaultSeed
 	}
 	return opts
+}
+
+func mantaReferenceImageGradAccelerator(name string) (backend.ImageGradAccelerator, error) {
+	switch name {
+	case "reference", "cpu":
+		return nil, nil
+	case "cuda":
+		accel, _, err := backend.NewPreferredImageGradAccelerator(mantaartifact.BackendCUDA)
+		if err != nil {
+			return nil, err
+		}
+		if accel == nil {
+			return nil, fmt.Errorf("mirage: CUDA image-gradient backend is unavailable")
+		}
+		return accel, nil
+	default:
+		return nil, fmt.Errorf("mirage: unknown training backend %q", name)
+	}
 }
 
 func mantaReferenceTrainTensors(images []RGBImage, opts MantaReferenceTrainOptions) ([]*backend.Tensor, error) {
