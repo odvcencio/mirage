@@ -534,6 +534,8 @@ func runTrainMantaKodak(args []string) error {
 	randomCrops := fs.Int("random-crops-per-image", 1, "random crops to materialize per decoded image when -crop-mode random")
 	cropSeed := fs.Int64("crop-seed", 0, "deterministic random crop seed")
 	resumePath := fs.String("resume", "", "optional .weights.mll checkpoint to resume from")
+	resumeOptimizerPath := fs.String("resume-optim", "", "optional .optim.mll Adam state checkpoint; defaults to the sibling of -resume")
+	totalSteps := fs.Int("total-steps", 0, "total optimizer steps for resumed cosine/lambda schedules; defaults to this run's -steps or the resumed optimizer state")
 	checkpointEvery := fs.Int("checkpoint-every", 0, "write eval-compatible intermediate checkpoints every N steps when -out-dir is set")
 	outDir := fs.String("out-dir", "", "optional directory for .mll modules, .weights.mll checkpoints, and summary.json")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON summary")
@@ -628,6 +630,8 @@ func runTrainMantaKodak(args []string) error {
 			CropSeed:             *cropSeed,
 			WeightSeed:           *weightSeed,
 			ResumePath:           *resumePath,
+			ResumeOptimizerPath:  *resumeOptimizerPath,
+			ScheduleSteps:        *totalSteps,
 			CheckpointPath:       checkpointPath,
 			CheckpointEvery:      *checkpointEvery,
 			CheckpointPrefix:     checkpointPrefix,
@@ -636,42 +640,46 @@ func runTrainMantaKodak(args []string) error {
 			return err
 		}
 		run := trainMantaKodakRun{
-			Lambda:          lambda,
-			Images:          result.Images,
-			Steps:           result.Steps,
-			CropWidth:       result.ImageWidth,
-			CropHeight:      result.ImageHeight,
-			LatentChannels:  result.LatentChannels,
-			HyperChannels:   result.HyperChannels,
-			BitWidth:        result.BitWidth,
-			Factorization:   result.Factorization.String(),
-			CropMode:        result.CropMode,
-			TrainingCrops:   result.TrainingCrops,
-			RandomCrops:     result.RandomCrops,
-			CropSeed:        result.CropSeed,
-			Backend:         result.Backend,
-			Optimizer:       result.Optimizer,
-			LearningRate:    result.LearningRate,
-			LRSchedule:      result.LRSchedule,
-			FinalLR:         result.FinalLR,
-			LambdaSchedule:  result.LambdaSchedule,
-			InitialLambda:   result.InitialLambda,
-			LambdaDelay:     result.LambdaDelay,
-			LambdaRamp:      result.LambdaRamp,
-			FreezeAnalysis:  result.FreezeAnalysis,
-			InitialLoss:     result.InitialLoss,
-			FinalLoss:       result.FinalLoss,
-			DeltaLoss:       result.InitialLoss - result.FinalLoss,
-			InitialMSE:      result.InitialMSE,
-			FinalMSE:        result.FinalMSE,
-			InitialRate:     result.InitialRate,
-			FinalRate:       result.FinalRate,
-			Duration:        time.Since(start).String(),
-			ResumePath:      result.ResumePath,
-			ModulePath:      modulePath,
-			CheckpointPath:  result.CheckpointPath,
-			CheckpointEvery: *checkpointEvery,
-			Checkpoints:     trainMantaCheckpointsFromResult(result.Checkpoints),
+			Lambda:              lambda,
+			Images:              result.Images,
+			Steps:               result.Steps,
+			CropWidth:           result.ImageWidth,
+			CropHeight:          result.ImageHeight,
+			LatentChannels:      result.LatentChannels,
+			HyperChannels:       result.HyperChannels,
+			BitWidth:            result.BitWidth,
+			Factorization:       result.Factorization.String(),
+			CropMode:            result.CropMode,
+			TrainingCrops:       result.TrainingCrops,
+			RandomCrops:         result.RandomCrops,
+			CropSeed:            result.CropSeed,
+			Backend:             result.Backend,
+			Optimizer:           result.Optimizer,
+			LearningRate:        result.LearningRate,
+			LRSchedule:          result.LRSchedule,
+			FinalLR:             result.FinalLR,
+			LambdaSchedule:      result.LambdaSchedule,
+			InitialLambda:       result.InitialLambda,
+			LambdaDelay:         result.LambdaDelay,
+			LambdaRamp:          result.LambdaRamp,
+			FreezeAnalysis:      result.FreezeAnalysis,
+			InitialStep:         result.InitialStep,
+			ScheduleSteps:       result.ScheduleSteps,
+			InitialLoss:         result.InitialLoss,
+			FinalLoss:           result.FinalLoss,
+			DeltaLoss:           result.InitialLoss - result.FinalLoss,
+			InitialMSE:          result.InitialMSE,
+			FinalMSE:            result.FinalMSE,
+			InitialRate:         result.InitialRate,
+			FinalRate:           result.FinalRate,
+			Duration:            time.Since(start).String(),
+			ResumePath:          result.ResumePath,
+			ResumeOptimizerPath: result.ResumeOptimizerPath,
+			ModulePath:          modulePath,
+			CheckpointPath:      result.CheckpointPath,
+			OptimizerPath:       result.OptimizerPath,
+			CheckpointEvery:     *checkpointEvery,
+			Checkpoints:         trainMantaCheckpointsFromResult(result.Checkpoints),
 		}
 		if len(result.GradientNorms) > 0 {
 			run.FirstGradientNorms = trainMantaGradientNormsFromResult(result.GradientNorms[0])
@@ -1006,6 +1014,7 @@ func trainMantaCheckpointsFromResult(in []mirage.MantaReferenceCheckpoint) []tra
 			Lambda:         item.Lambda,
 			ModulePath:     item.ModulePath,
 			CheckpointPath: item.CheckpointPath,
+			OptimizerPath:  item.OptimizerPath,
 		}
 	}
 	return out
@@ -1034,44 +1043,48 @@ type trainMantaKodakSummary struct {
 }
 
 type trainMantaKodakRun struct {
-	Lambda             float64                 `json:"lambda"`
-	Images             int                     `json:"images"`
-	Steps              int                     `json:"steps"`
-	CropWidth          int                     `json:"crop_width"`
-	CropHeight         int                     `json:"crop_height"`
-	LatentChannels     int                     `json:"latent_channels"`
-	HyperChannels      int                     `json:"hyper_channels"`
-	BitWidth           int                     `json:"bit_width"`
-	Factorization      string                  `json:"factorization"`
-	CropMode           string                  `json:"crop_mode"`
-	TrainingCrops      int                     `json:"training_crops"`
-	RandomCrops        int                     `json:"random_crops_per_image"`
-	CropSeed           int64                   `json:"crop_seed"`
-	Backend            string                  `json:"backend"`
-	Optimizer          string                  `json:"optimizer"`
-	LearningRate       float32                 `json:"learning_rate"`
-	LRSchedule         string                  `json:"learning_rate_schedule"`
-	FinalLR            float32                 `json:"final_learning_rate"`
-	LambdaSchedule     string                  `json:"lambda_schedule"`
-	InitialLambda      float32                 `json:"initial_lambda"`
-	LambdaDelay        int                     `json:"lambda_delay_steps"`
-	LambdaRamp         int                     `json:"lambda_ramp_steps"`
-	FreezeAnalysis     int                     `json:"freeze_analysis_steps"`
-	InitialLoss        float32                 `json:"initial_loss"`
-	FinalLoss          float32                 `json:"final_loss"`
-	DeltaLoss          float32                 `json:"delta_loss"`
-	InitialMSE         float32                 `json:"initial_mse"`
-	FinalMSE           float32                 `json:"final_mse"`
-	InitialRate        float32                 `json:"initial_rate"`
-	FinalRate          float32                 `json:"final_rate"`
-	FirstGradientNorms trainMantaGradientNorms `json:"first_gradient_norms"`
-	LastGradientNorms  trainMantaGradientNorms `json:"last_gradient_norms"`
-	Duration           string                  `json:"duration"`
-	ResumePath         string                  `json:"resume_path,omitempty"`
-	ModulePath         string                  `json:"module_path,omitempty"`
-	CheckpointPath     string                  `json:"checkpoint_path,omitempty"`
-	CheckpointEvery    int                     `json:"checkpoint_every,omitempty"`
-	Checkpoints        []trainMantaCheckpoint  `json:"checkpoints,omitempty"`
+	Lambda              float64                 `json:"lambda"`
+	Images              int                     `json:"images"`
+	Steps               int                     `json:"steps"`
+	CropWidth           int                     `json:"crop_width"`
+	CropHeight          int                     `json:"crop_height"`
+	LatentChannels      int                     `json:"latent_channels"`
+	HyperChannels       int                     `json:"hyper_channels"`
+	BitWidth            int                     `json:"bit_width"`
+	Factorization       string                  `json:"factorization"`
+	CropMode            string                  `json:"crop_mode"`
+	TrainingCrops       int                     `json:"training_crops"`
+	RandomCrops         int                     `json:"random_crops_per_image"`
+	CropSeed            int64                   `json:"crop_seed"`
+	Backend             string                  `json:"backend"`
+	Optimizer           string                  `json:"optimizer"`
+	LearningRate        float32                 `json:"learning_rate"`
+	LRSchedule          string                  `json:"learning_rate_schedule"`
+	FinalLR             float32                 `json:"final_learning_rate"`
+	LambdaSchedule      string                  `json:"lambda_schedule"`
+	InitialLambda       float32                 `json:"initial_lambda"`
+	LambdaDelay         int                     `json:"lambda_delay_steps"`
+	LambdaRamp          int                     `json:"lambda_ramp_steps"`
+	FreezeAnalysis      int                     `json:"freeze_analysis_steps"`
+	InitialStep         int                     `json:"initial_step,omitempty"`
+	ScheduleSteps       int                     `json:"schedule_steps,omitempty"`
+	InitialLoss         float32                 `json:"initial_loss"`
+	FinalLoss           float32                 `json:"final_loss"`
+	DeltaLoss           float32                 `json:"delta_loss"`
+	InitialMSE          float32                 `json:"initial_mse"`
+	FinalMSE            float32                 `json:"final_mse"`
+	InitialRate         float32                 `json:"initial_rate"`
+	FinalRate           float32                 `json:"final_rate"`
+	FirstGradientNorms  trainMantaGradientNorms `json:"first_gradient_norms"`
+	LastGradientNorms   trainMantaGradientNorms `json:"last_gradient_norms"`
+	Duration            string                  `json:"duration"`
+	ResumePath          string                  `json:"resume_path,omitempty"`
+	ResumeOptimizerPath string                  `json:"resume_optimizer_path,omitempty"`
+	ModulePath          string                  `json:"module_path,omitempty"`
+	CheckpointPath      string                  `json:"checkpoint_path,omitempty"`
+	OptimizerPath       string                  `json:"optimizer_path,omitempty"`
+	CheckpointEvery     int                     `json:"checkpoint_every,omitempty"`
+	Checkpoints         []trainMantaCheckpoint  `json:"checkpoints,omitempty"`
 }
 
 type trainMantaCheckpoint struct {
@@ -1083,6 +1096,7 @@ type trainMantaCheckpoint struct {
 	Lambda         float32 `json:"lambda"`
 	ModulePath     string  `json:"module_path,omitempty"`
 	CheckpointPath string  `json:"checkpoint_path,omitempty"`
+	OptimizerPath  string  `json:"optimizer_path,omitempty"`
 }
 
 type trainMantaGradientNorms struct {

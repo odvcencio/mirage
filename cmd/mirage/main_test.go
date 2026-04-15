@@ -105,12 +105,16 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 		filepath.Join(outDir, "summary.json"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p001.mll"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p001.weights.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p001.optim.mll"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p001_step_000001.mll"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p001_step_000001.weights.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p001_step_000001.optim.mll"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p01.mll"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p01.weights.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p01.optim.mll"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p01_step_000001.mll"),
 		filepath.Join(outDir, "mirage_v1_lambda_0p01_step_000001.weights.mll"),
+		filepath.Join(outDir, "mirage_v1_lambda_0p01_step_000001.optim.mll"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected output %s: %v", path, err)
@@ -164,6 +168,9 @@ func TestRunTrainMantaKodakUsesDirectoryAndLambdaSweep(t *testing.T) {
 	}
 	if len(summary.Runs[0].Checkpoints) != 1 || summary.Runs[0].Checkpoints[0].Step != 1 {
 		t.Fatalf("unexpected checkpoints: %+v", summary.Runs[0].Checkpoints)
+	}
+	if summary.Runs[0].OptimizerPath == "" || summary.Runs[0].Checkpoints[0].OptimizerPath == "" {
+		t.Fatalf("missing optimizer checkpoint metadata: %+v", summary.Runs[0])
 	}
 }
 

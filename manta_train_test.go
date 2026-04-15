@@ -105,6 +105,7 @@ func TestTrainMantaReferenceImagesRandomCropsAndResume(t *testing.T) {
 		RandomCrops:          3,
 		CropSeed:             11,
 		WeightSeed:           7,
+		Optimizer:            "adam",
 		CheckpointPath:       checkpointPath,
 		CheckpointEvery:      1,
 		CheckpointPrefix:     checkpointPrefix,
@@ -132,8 +133,10 @@ func TestTrainMantaReferenceImagesRandomCropsAndResume(t *testing.T) {
 	}
 	for _, path := range []string{
 		checkpointPath,
+		filepath.Join(dir, "checkpoint.optim.mll"),
 		filepath.Join(dir, "checkpoint_step_000001.mll"),
 		filepath.Join(dir, "checkpoint_step_000001.weights.mll"),
+		filepath.Join(dir, "checkpoint_step_000001.optim.mll"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected checkpoint output %s: %v", path, err)
@@ -148,6 +151,7 @@ func TestTrainMantaReferenceImagesRandomCropsAndResume(t *testing.T) {
 		},
 		Steps:        1,
 		LearningRate: 0.02,
+		Optimizer:    "adam",
 		GradientClip: 0.5,
 		CropSize:     16,
 		ResumePath:   checkpointPath,

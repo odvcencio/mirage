@@ -5,6 +5,8 @@ package mirage
 import (
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -43,6 +45,8 @@ type MantaReferenceTrainOptions struct {
 	CropSeed             int64
 	WeightSeed           int64
 	ResumePath           string
+	ResumeOptimizerPath  string
+	ScheduleSteps        int
 	Backend              string
 	CheckpointPath       string
 	CheckpointEvery      int
@@ -51,44 +55,48 @@ type MantaReferenceTrainOptions struct {
 
 // MantaReferenceTrainResult summarizes convergence for one reference run.
 type MantaReferenceTrainResult struct {
-	Images         int
-	Steps          int
-	ImageWidth     int
-	ImageHeight    int
-	LatentChannels int
-	HyperChannels  int
-	BitWidth       int
-	Factorization  Factorization
-	Lambda         float64
-	CropMode       string
-	TrainingCrops  int
-	RandomCrops    int
-	CropSeed       int64
-	ResumePath     string
-	Backend        string
-	InitialLoss    float32
-	FinalLoss      float32
-	InitialMSE     float32
-	FinalMSE       float32
-	InitialRate    float32
-	FinalRate      float32
-	Losses         []float32
-	MSEs           []float32
-	Rates          []float32
-	LearningRates  []float32
-	Lambdas        []float32
-	GradientNorms  []MantaReferenceGradientNorms
-	Checkpoints    []MantaReferenceCheckpoint
-	CheckpointPath string
-	Optimizer      string
-	LearningRate   float32
-	LRSchedule     string
-	FinalLR        float32
-	LambdaSchedule string
-	InitialLambda  float32
-	LambdaDelay    int
-	LambdaRamp     int
-	FreezeAnalysis int
+	Images              int
+	Steps               int
+	ImageWidth          int
+	ImageHeight         int
+	LatentChannels      int
+	HyperChannels       int
+	BitWidth            int
+	Factorization       Factorization
+	Lambda              float64
+	CropMode            string
+	TrainingCrops       int
+	RandomCrops         int
+	CropSeed            int64
+	ResumePath          string
+	ResumeOptimizerPath string
+	Backend             string
+	InitialStep         int
+	ScheduleSteps       int
+	InitialLoss         float32
+	FinalLoss           float32
+	InitialMSE          float32
+	FinalMSE            float32
+	InitialRate         float32
+	FinalRate           float32
+	Losses              []float32
+	MSEs                []float32
+	Rates               []float32
+	LearningRates       []float32
+	Lambdas             []float32
+	GradientNorms       []MantaReferenceGradientNorms
+	Checkpoints         []MantaReferenceCheckpoint
+	CheckpointPath      string
+	OptimizerPath       string
+	Optimizer           string
+	LearningRate        float32
+	LRSchedule          string
+	FinalLR             float32
+	LambdaSchedule      string
+	InitialLambda       float32
+	LambdaDelay         int
+	LambdaRamp          int
+	FreezeAnalysis      int
 }
 
 // MantaReferenceCheckpoint records metrics and optional artifact paths for a
@@ -102,6 +110,7 @@ type MantaReferenceCheckpoint struct {
 	Lambda         float32
 	ModulePath     string
 	CheckpointPath string
+	OptimizerPath  string
 }
 
 // MantaReferenceGradientNorms records raw reference autograd gradient L2 norms
@@ -124,6 +133,9 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		return MantaReferenceTrainResult{}, fmt.Errorf("mirage: at least one training image is required")
 	}
 	opts = normalizeMantaReferenceTrainOptions(opts)
+	if opts.ScheduleSteps < 0 {
+		return MantaReferenceTrainResult{}, fmt.Errorf("mirage: schedule steps must be non-negative")
+	}
 	mod, err := MantaModule(opts.Config)
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
@@ -136,6 +148,15 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
 	}
+	optimizerState, resumeScheduleSteps, err := mantaReferenceInitialOptimizerState(opts)
+	if err != nil {
+		return MantaReferenceTrainResult{}, err
+	}
+	initialStep := 0
+	if optimizerState != nil {
+		initialStep = optimizerState.Step
+	}
+	scheduleSteps := mantaReferenceEffectiveScheduleSteps(opts, initialStep, resumeScheduleSteps)
 	imageGradAccel, err := mantaReferenceImageGradAccelerator(opts.Backend)
 	if err != nil {
 		return MantaReferenceTrainResult{}, err
@@ -143,7 +164,7 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 	if imageGradAccel != nil {
 		defer imageGradAccel.Close()
 	}
-	checkpointFunc := mantaReferenceCheckpointFunc(opts)
+	checkpointFunc := mantaReferenceCheckpointFunc(opts, scheduleSteps)
 	history, err := mantamodels.TrainMirageV1Reference(mod, weights, tensors, mantamodels.MirageV1ReferenceTrainConfig{
 		Steps:                opts.Steps,
 		LearningRate:         opts.LearningRate,
@@ -161,8 +182,11 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		AdamBeta2:            opts.AdamBeta2,
 		AdamEpsilon:          opts.AdamEpsilon,
 		FreezeAnalysisSteps:  opts.FreezeAnalysisSteps,
+		InitialStep:          initialStep,
+		ScheduleSteps:        scheduleSteps,
+		OptimizerState:       optimizerState,
 		CheckpointEvery:      opts.CheckpointEvery,
-		CheckpointFunc:       checkpointFunc,
+		CheckpointStateFunc:  checkpointFunc,
 		ImageGradAccelerator: imageGradAccel,
 	})
 	if err != nil {
@@ -172,68 +196,78 @@ func TrainMantaReferenceImages(images []RGBImage, opts MantaReferenceTrainOption
 		if err := mantaruntime.NewWeightFile(weights).WriteFile(opts.CheckpointPath); err != nil {
 			return MantaReferenceTrainResult{}, err
 		}
+		if err := writeMantaReferenceOptimizerState(mantaReferenceOptimizerPathForWeights(opts.CheckpointPath), opts, scheduleSteps, history.OptimizerState); err != nil {
+			return MantaReferenceTrainResult{}, err
+		}
 	}
 	return MantaReferenceTrainResult{
-		Images:         len(images),
-		Steps:          opts.Steps,
-		ImageWidth:     opts.Config.ImageWidth,
-		ImageHeight:    opts.Config.ImageHeight,
-		LatentChannels: opts.Config.LatentChannels,
-		HyperChannels:  opts.Config.HyperChannels,
-		BitWidth:       opts.Config.BitWidth,
-		Factorization:  opts.Config.Factorization,
-		Lambda:         opts.Config.Lambda,
-		CropMode:       opts.CropMode,
-		TrainingCrops:  len(tensors),
-		RandomCrops:    opts.RandomCrops,
-		CropSeed:       opts.CropSeed,
-		ResumePath:     opts.ResumePath,
-		Backend:        opts.Backend,
-		InitialLoss:    history.InitialLoss,
-		FinalLoss:      history.FinalLoss,
-		InitialMSE:     history.InitialMSE,
-		FinalMSE:       history.FinalMSE,
-		InitialRate:    history.InitialRate,
-		FinalRate:      history.FinalRate,
-		Losses:         append([]float32(nil), history.Losses...),
-		MSEs:           append([]float32(nil), history.MSEs...),
-		Rates:          append([]float32(nil), history.Rates...),
-		LearningRates:  append([]float32(nil), history.LearningRates...),
-		Lambdas:        append([]float32(nil), history.Lambdas...),
-		GradientNorms:  convertMantaReferenceGradientNorms(history.GradientNorms),
-		Checkpoints:    convertMantaReferenceCheckpoints(history.Checkpoints, opts.CheckpointPrefix),
-		CheckpointPath: opts.CheckpointPath,
-		Optimizer:      opts.Optimizer,
-		LearningRate:   opts.LearningRate,
-		LRSchedule:     opts.LearningRateSchedule,
-		FinalLR:        opts.FinalLearningRate,
-		LambdaSchedule: opts.LambdaSchedule,
-		InitialLambda:  opts.InitialLambda,
-		LambdaDelay:    opts.LambdaDelaySteps,
-		LambdaRamp:     opts.LambdaRampSteps,
-		FreezeAnalysis: opts.FreezeAnalysisSteps,
+		Images:              len(images),
+		Steps:               opts.Steps,
+		ImageWidth:          opts.Config.ImageWidth,
+		ImageHeight:         opts.Config.ImageHeight,
+		LatentChannels:      opts.Config.LatentChannels,
+		HyperChannels:       opts.Config.HyperChannels,
+		BitWidth:            opts.Config.BitWidth,
+		Factorization:       opts.Config.Factorization,
+		Lambda:              opts.Config.Lambda,
+		CropMode:            opts.CropMode,
+		TrainingCrops:       len(tensors),
+		RandomCrops:         opts.RandomCrops,
+		CropSeed:            opts.CropSeed,
+		ResumePath:          opts.ResumePath,
+		ResumeOptimizerPath: mantaReferenceResumeOptimizerPath(opts),
+		Backend:             opts.Backend,
+		InitialStep:         initialStep,
+		ScheduleSteps:       scheduleSteps,
+		InitialLoss:         history.InitialLoss,
+		FinalLoss:           history.FinalLoss,
+		InitialMSE:          history.InitialMSE,
+		FinalMSE:            history.FinalMSE,
+		InitialRate:         history.InitialRate,
+		FinalRate:           history.FinalRate,
+		Losses:              append([]float32(nil), history.Losses...),
+		MSEs:                append([]float32(nil), history.MSEs...),
+		Rates:               append([]float32(nil), history.Rates...),
+		LearningRates:       append([]float32(nil), history.LearningRates...),
+		Lambdas:             append([]float32(nil), history.Lambdas...),
+		GradientNorms:       convertMantaReferenceGradientNorms(history.GradientNorms),
+		Checkpoints:         convertMantaReferenceCheckpoints(history.Checkpoints, opts.CheckpointPrefix, opts.Optimizer),
+		CheckpointPath:      opts.CheckpointPath,
+		OptimizerPath:       mantaReferenceSavedOptimizerPath(opts, opts.CheckpointPath),
+		Optimizer:           opts.Optimizer,
+		LearningRate:        opts.LearningRate,
+		LRSchedule:          opts.LearningRateSchedule,
+		FinalLR:             opts.FinalLearningRate,
+		LambdaSchedule:      opts.LambdaSchedule,
+		InitialLambda:       opts.InitialLambda,
+		LambdaDelay:         opts.LambdaDelaySteps,
+		LambdaRamp:          opts.LambdaRampSteps,
+		FreezeAnalysis:      opts.FreezeAnalysisSteps,
 	}, nil
 }
 
-func mantaReferenceCheckpointFunc(opts MantaReferenceTrainOptions) func(mantamodels.MirageV1ReferenceCheckpoint, map[string]*backend.Tensor) error {
+func mantaReferenceCheckpointFunc(opts MantaReferenceTrainOptions, scheduleSteps int) func(mantamodels.MirageV1ReferenceCheckpoint, map[string]*backend.Tensor, *mantamodels.MirageV1ReferenceOptimizerState) error {
 	if opts.CheckpointEvery <= 0 || opts.CheckpointPrefix == "" {
 		return nil
 	}
-	return func(checkpoint mantamodels.MirageV1ReferenceCheckpoint, weights map[string]*backend.Tensor) error {
-		modulePath, checkpointPath := mantaReferenceCheckpointPaths(opts.CheckpointPrefix, checkpoint.Step)
+	return func(checkpoint mantamodels.MirageV1ReferenceCheckpoint, weights map[string]*backend.Tensor, optimizerState *mantamodels.MirageV1ReferenceOptimizerState) error {
+		modulePath, checkpointPath, optimizerPath := mantaReferenceCheckpointPaths(opts.CheckpointPrefix, checkpoint.Step)
 		if err := WriteMantaMLL(modulePath, opts.Config); err != nil {
 			return err
 		}
 		if err := mantaruntime.NewWeightFile(weights).WriteFile(checkpointPath); err != nil {
 			return err
 		}
+		if err := writeMantaReferenceOptimizerState(optimizerPath, opts, scheduleSteps, optimizerState); err != nil {
+			return err
+		}
 		return nil
 	}
 }
 
-func mantaReferenceCheckpointPaths(prefix string, step int) (string, string) {
+func mantaReferenceCheckpointPaths(prefix string, step int) (string, string, string) {
 	stem := fmt.Sprintf("%s_step_%06d", prefix, step)
-	return stem + ".mll", stem + ".weights.mll"
+	return stem + ".mll", stem + ".weights.mll", stem + ".optim.mll"
 }
 
 func convertMantaReferenceGradientNorms(in []mantamodels.MirageV1ReferenceGradientNorms) []MantaReferenceGradientNorms {
@@ -255,7 +289,7 @@ func convertMantaReferenceGradientNorms(in []mantamodels.MirageV1ReferenceGradie
 	return out
 }
 
-func convertMantaReferenceCheckpoints(in []mantamodels.MirageV1ReferenceCheckpoint, prefix string) []MantaReferenceCheckpoint {
+func convertMantaReferenceCheckpoints(in []mantamodels.MirageV1ReferenceCheckpoint, prefix, optimizer string) []MantaReferenceCheckpoint {
 	if len(in) == 0 {
 		return nil
 	}
@@ -270,7 +304,10 @@ func convertMantaReferenceCheckpoints(in []mantamodels.MirageV1ReferenceCheckpoi
 			Lambda:       item.Lambda,
 		}
 		if prefix != "" {
-			out[i].ModulePath, out[i].CheckpointPath = mantaReferenceCheckpointPaths(prefix, item.Step)
+			out[i].ModulePath, out[i].CheckpointPath, out[i].OptimizerPath = mantaReferenceCheckpointPaths(prefix, item.Step)
+			if optimizer != "adam" {
+				out[i].OptimizerPath = ""
+			}
 		}
 	}
 	return out
@@ -405,6 +442,160 @@ func mantaReferenceInitialWeights(mod *mantaartifact.Module, opts MantaReference
 		return weights.Weights, nil
 	}
 	return mantamodels.InitMirageV1ReferenceWeights(mod, opts.WeightSeed)
+}
+
+const (
+	mantaReferenceAdamStepTensor          = "__mirage_adam_step"
+	mantaReferenceScheduleStepsTensor     = "__mirage_schedule_steps"
+	mantaReferenceLearningRateTensor      = "__mirage_learning_rate"
+	mantaReferenceFinalLearningRateTensor = "__mirage_final_learning_rate"
+	mantaReferenceAdamBeta1Tensor         = "__mirage_adam_beta1"
+	mantaReferenceAdamBeta2Tensor         = "__mirage_adam_beta2"
+	mantaReferenceAdamEpsilonTensor       = "__mirage_adam_epsilon"
+	mantaReferenceAdamMPrefix             = "adam_m/"
+	mantaReferenceAdamVPrefix             = "adam_v/"
+)
+
+func mantaReferenceInitialOptimizerState(opts MantaReferenceTrainOptions) (*mantamodels.MirageV1ReferenceOptimizerState, int, error) {
+	if opts.Optimizer != "adam" {
+		return nil, 0, nil
+	}
+	path := mantaReferenceResumeOptimizerPath(opts)
+	if path == "" {
+		return nil, 0, nil
+	}
+	weights, err := mantaruntime.ReadWeightFile(path)
+	if err != nil {
+		if opts.ResumeOptimizerPath == "" && os.IsNotExist(err) {
+			return nil, 0, nil
+		}
+		return nil, 0, fmt.Errorf("resume optimizer state: %w", err)
+	}
+	step, err := scalarInt64Tensor(weights.Weights, mantaReferenceAdamStepTensor)
+	if err != nil {
+		return nil, 0, err
+	}
+	scheduleSteps, err := optionalScalarInt64Tensor(weights.Weights, mantaReferenceScheduleStepsTensor)
+	if err != nil {
+		return nil, 0, err
+	}
+	state := &mantamodels.MirageV1ReferenceOptimizerState{
+		Step: int(step),
+		M:    map[string]*backend.Tensor{},
+		V:    map[string]*backend.Tensor{},
+	}
+	for name, tensor := range weights.Weights {
+		switch {
+		case strings.HasPrefix(name, mantaReferenceAdamMPrefix):
+			state.M[strings.TrimPrefix(name, mantaReferenceAdamMPrefix)] = tensor.Clone()
+		case strings.HasPrefix(name, mantaReferenceAdamVPrefix):
+			state.V[strings.TrimPrefix(name, mantaReferenceAdamVPrefix)] = tensor.Clone()
+		}
+	}
+	if len(state.M) == 0 || len(state.V) == 0 {
+		return nil, 0, fmt.Errorf("resume optimizer state has no Adam moments")
+	}
+	return state, int(scheduleSteps), nil
+}
+
+func writeMantaReferenceOptimizerState(path string, opts MantaReferenceTrainOptions, scheduleSteps int, state *mantamodels.MirageV1ReferenceOptimizerState) error {
+	if path == "" || opts.Optimizer != "adam" || state == nil {
+		return nil
+	}
+	tensors := map[string]*backend.Tensor{
+		mantaReferenceAdamStepTensor:          backend.NewTensorI64([]int{1}, []int64{int64(state.Step)}),
+		mantaReferenceScheduleStepsTensor:     backend.NewTensorI64([]int{1}, []int64{int64(scheduleSteps)}),
+		mantaReferenceLearningRateTensor:      backend.NewTensorF32([]int{1}, []float32{opts.LearningRate}),
+		mantaReferenceFinalLearningRateTensor: backend.NewTensorF32([]int{1}, []float32{opts.FinalLearningRate}),
+		mantaReferenceAdamBeta1Tensor:         backend.NewTensorF32([]int{1}, []float32{opts.AdamBeta1}),
+		mantaReferenceAdamBeta2Tensor:         backend.NewTensorF32([]int{1}, []float32{opts.AdamBeta2}),
+		mantaReferenceAdamEpsilonTensor:       backend.NewTensorF32([]int{1}, []float32{opts.AdamEpsilon}),
+	}
+	for name, tensor := range state.M {
+		if tensor != nil {
+			tensors[mantaReferenceAdamMPrefix+name] = tensor.Clone()
+		}
+	}
+	for name, tensor := range state.V {
+		if tensor != nil {
+			tensors[mantaReferenceAdamVPrefix+name] = tensor.Clone()
+		}
+	}
+	return mantaruntime.NewWeightFile(tensors).WriteFile(path)
+}
+
+func mantaReferenceResumeOptimizerPath(opts MantaReferenceTrainOptions) string {
+	if opts.ResumeOptimizerPath != "" {
+		return opts.ResumeOptimizerPath
+	}
+	if opts.ResumePath == "" {
+		return ""
+	}
+	return mantaReferenceOptimizerPathForWeights(opts.ResumePath)
+}
+
+func mantaReferenceOptimizerPathForWeights(path string) string {
+	if path == "" {
+		return ""
+	}
+	if strings.HasSuffix(path, ".weights.mll") {
+		return strings.TrimSuffix(path, ".weights.mll") + ".optim.mll"
+	}
+	if strings.HasSuffix(path, ".mll") {
+		return strings.TrimSuffix(path, ".mll") + ".optim.mll"
+	}
+	ext := filepath.Ext(path)
+	if ext == "" {
+		return path + ".optim.mll"
+	}
+	return strings.TrimSuffix(path, ext) + ".optim.mll"
+}
+
+func mantaReferenceSavedOptimizerPath(opts MantaReferenceTrainOptions, weightPath string) string {
+	if opts.Optimizer != "adam" {
+		return ""
+	}
+	return mantaReferenceOptimizerPathForWeights(weightPath)
+}
+
+func mantaReferenceEffectiveScheduleSteps(opts MantaReferenceTrainOptions, initialStep, resumeScheduleSteps int) int {
+	if opts.ScheduleSteps > 0 {
+		return opts.ScheduleSteps
+	}
+	if resumeScheduleSteps > 0 {
+		return resumeScheduleSteps
+	}
+	return initialStep + opts.Steps
+}
+
+func scalarInt64Tensor(tensors map[string]*backend.Tensor, name string) (int64, error) {
+	value, err := optionalScalarInt64Tensor(tensors, name)
+	if err != nil {
+		return 0, err
+	}
+	if value == 0 {
+		if tensor := tensors[name]; tensor == nil {
+			return 0, fmt.Errorf("optimizer state missing %s", name)
+		}
+	}
+	return value, nil
+}
+
+func optionalScalarInt64Tensor(tensors map[string]*backend.Tensor, name string) (int64, error) {
+	tensor := tensors[name]
+	if tensor == nil {
+		return 0, nil
+	}
+	if len(tensor.I64) == 1 {
+		return tensor.I64[0], nil
+	}
+	if len(tensor.I32) == 1 {
+		return int64(tensor.I32[0]), nil
+	}
+	if len(tensor.F32) == 1 {
+		return int64(tensor.F32[0]), nil
+	}
+	return 0, fmt.Errorf("optimizer state tensor %s is not scalar", name)
 }
 
 func rgbImageToMantaTrainTensor(img RGBImage, width, height int) (*backend.Tensor, error) {
