@@ -53,8 +53,9 @@ func TestRunEvalMantaKodakSingleCheckpoint(t *testing.T) {
 	outDir := filepath.Join(dir, "eval")
 	if err := runEvalMantaKodak([]string{
 		"-in", sourcePath,
-		"-manta-module", modulePath,
-		"-manta-weights", weightPath,
+		"-module", modulePath,
+		"-weights", weightPath,
+		"-eval-backend", "reference",
 		"-out-dir", outDir,
 	}); err != nil {
 		t.Fatal(err)

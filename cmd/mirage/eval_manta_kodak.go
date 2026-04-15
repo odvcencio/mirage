@@ -25,6 +25,9 @@ func runEvalMantaKodak(args []string) error {
 	runDir := fs.String("run-dir", "", "directory containing mirage_v1_lambda_*.mll and .weights.mll checkpoints")
 	modulePath := fs.String("manta-module", "", "single Manta Mirage v1 .mll module")
 	weightPath := fs.String("manta-weights", "", "single Manta Mirage v1 .weights.mll file")
+	fs.StringVar(modulePath, "module", "", "alias for -manta-module")
+	fs.StringVar(weightPath, "weights", "", "alias for -manta-weights")
+	evalBackend := fs.String("eval-backend", "webgpu", "Manta eval backend: webgpu or reference")
 	outDir := fs.String("out-dir", "", "optional directory for .mrg artifacts and eval_summary.json")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON summary to stdout")
 	allowMismatch := fs.Bool("allow-model-mismatch", false, "allow Manta module fingerprint mismatch")
@@ -59,6 +62,7 @@ func runEvalMantaKodak(args []string) error {
 		codec, err := mirage.LoadMantaCodec(ctx, mirage.MantaCodecOptions{
 			ModulePath:         model.ModulePath,
 			WeightPath:         model.WeightPath,
+			Backend:            *evalBackend,
 			AllowModelMismatch: *allowMismatch,
 		})
 		if err != nil {

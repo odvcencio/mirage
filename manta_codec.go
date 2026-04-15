@@ -13,6 +13,7 @@ import (
 	mantaartifact "github.com/odvcencio/manta/artifact/manta"
 	mantaruntime "github.com/odvcencio/manta/runtime"
 	"github.com/odvcencio/manta/runtime/backend"
+	"github.com/odvcencio/manta/runtime/backends/vulkan"
 	"github.com/odvcencio/manta/runtime/backends/webgpu"
 )
 
@@ -23,6 +24,7 @@ const mantaCodecProbabilityFloor = 1e-9
 type MantaCodecOptions struct {
 	ModulePath         string
 	WeightPath         string
+	Backend            string
 	AllowModelMismatch bool
 	CDFTotal           uint32
 }
@@ -85,7 +87,11 @@ func LoadMantaCodec(ctx context.Context, opts MantaCodecOptions) (*MantaCodec, e
 	if err != nil {
 		return nil, err
 	}
-	prog, err := mantaruntime.New(webgpu.New()).Load(ctx, mod, weights.LoadOptions()...)
+	runtimeBackends, err := mantaCodecRuntimeBackends(opts.Backend)
+	if err != nil {
+		return nil, err
+	}
+	prog, err := mantaruntime.New(runtimeBackends...).Load(ctx, mod, weights.LoadOptions()...)
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +104,19 @@ func LoadMantaCodec(ctx context.Context, opts MantaCodecOptions) (*MantaCodec, e
 		allowModelMismatch: opts.AllowModelMismatch,
 		cdfTotal:           opts.CDFTotal,
 	}, nil
+}
+
+func mantaCodecRuntimeBackends(name string) ([]backend.Backend, error) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "webgpu":
+		return []backend.Backend{webgpu.New()}, nil
+	case "reference", "host", "host-reference", "cpu":
+		return []backend.Backend{vulkan.New()}, nil
+	case "vulkan":
+		return []backend.Backend{vulkan.New()}, nil
+	default:
+		return nil, fmt.Errorf("mirage: unknown Manta codec backend %q", name)
+	}
 }
 
 func mantaCodecFingerprintBytes(moduleBytes, weightBytes []byte) []byte {
