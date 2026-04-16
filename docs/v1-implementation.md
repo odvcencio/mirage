@@ -608,6 +608,60 @@ wrote `/tmp/mirage-baselines/compressai/manifest.json`. The manifest records the
 source URL, architecture name, checkpoint URLs, byte counts, and SHA-256 hashes.
 The downloaded baseline directory is `380M`.
 
+## CUDA Training Verification Gate
+
+The CUDA backward kernels (Manta `02acce6` conv2d, `7be86c7` conv2d_transpose,
+`9d0de14` GDN/IGDN) plus the image-grad accelerator wiring (`ba3cd40`,
+`feb9b85`, `f6183a8`, `fd61532`, `03d654f`) reach Mirage through the
+`-backend cuda` flag added in `225d458`. The verification gate is the
+`TestMirageShortRecipeCUDARegression` test (`cmd/mirage/regression_test.go`),
+which retrains and re-evaluates the current-best 2000-step short cosine recipe
+under CUDA and asserts `avg_psnr` and `avg_bpp` against the CPU reference within
+`±0.5 dB` and `±0.01 bpp`.
+
+Command:
+
+```bash
+go run ./cmd/mirage train-manta-kodak \
+  -dir /home/draco/datasets/kodak \
+  -max-images 10 \
+  -steps 2000 \
+  -crop 256 \
+  -lambdas 0.01 \
+  -bits 4 \
+  -latent-channels 16 \
+  -hyper-channels 8 \
+  -optimizer adam \
+  -lr 0.001 \
+  -lr-schedule cosine \
+  -lr-final 0.000001 \
+  -clip 1 \
+  -backend cuda \
+  -checkpoint-every 100 \
+  -out-dir /tmp/mirage-cuda-regression/run
+
+go run ./cmd/mirage eval-manta-kodak \
+  -dir /home/draco/datasets/kodak \
+  -max-images 10 \
+  -run-dir /tmp/mirage-cuda-regression/run \
+  -out-dir /tmp/mirage-cuda-regression/eval
+```
+
+Endpoint comparison on the same 10-image center-crop eval set:
+
+| backend | endpoint train MSE | endpoint train rate | avg PSNR | avg bpp | avg bytes | training duration |
+|---|---:|---:|---:|---:|---:|---:|
+| reference (CPU) | 0.007266 | 19241.043 | 22.2543 | 0.3355 | 2748.2 | 33m27s |
+| cuda (RTX 5070 Ti) | 0.007270 | 19209.799 | 22.2524 | 0.3349 | 2743.9 | 1m45s |
+
+The CUDA endpoint is `-0.0019 dB` PSNR and `-0.0006 bpp` from the CPU reference,
+inside both regression tolerances. The full 20-checkpoint training trajectory
+also tracks the CPU run within hundredths of a dB at every recorded step, so the
+match is not just an endpoint coincidence but a structural reproduction of the
+training dynamics. Wall-clock training is `19.1x` faster than the CPU reference
+on a single 16 GB RTX 5070 Ti, which is what unlocks capacity-scaling
+experiments that the CPU path could not iterate on.
+
 ## Deployment Round Trip
 
 The first learned-codec deployment round trip now loads checkpointed

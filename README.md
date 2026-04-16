@@ -39,6 +39,11 @@ An 8-bit/32-latent/16-hyper capacity smoke reaches `21.8730 dB` by step 1000
 but spends `1.2173 bpp`, so wider capacity needs stronger rate calibration or
 GPU-backed iteration before a full sweep.
 
+The same recipe under `-backend cuda` reproduces the CPU reference within
+regression tolerance: `22.2524 dB` at `0.3349 bpp` (`-0.0019 dB`, `-0.0006 bpp`)
+in `1m45s` on a single 16 GB RTX 5070 Ti, a `19.1x` wall-clock speedup that
+unlocks capacity-scaling experiments.
+
 ## Quick Start
 
 ```bash
@@ -52,6 +57,7 @@ go run ./cmd/mirage check-manta -in mirage_v1.mll -entry train_step
 go run ./cmd/mirage train-manta-smoke -in input.png -steps 24 -crop 16 -bits 2
 go run ./cmd/mirage train-manta-kodak -dir kodak -max-images 5 -steps 200 -crop 256 -lambdas 0.001,0.01,0.1 -optimizer adam -lr 0.001 -out-dir runs/kodak-reference
 go run ./cmd/mirage train-manta-kodak -dir kodak -max-images 10 -steps 2000 -crop 256 -lambdas 0.01 -bits 4 -latent-channels 16 -hyper-channels 8 -optimizer adam -lr 0.001 -lr-schedule cosine -lr-final 0.000001 -clip 1 -checkpoint-every 100 -out-dir runs/kodak-short
+go run ./cmd/mirage train-manta-kodak -dir kodak -max-images 10 -steps 2000 -crop 256 -lambdas 0.01 -bits 4 -latent-channels 16 -hyper-channels 8 -optimizer adam -lr 0.001 -lr-schedule cosine -lr-final 0.000001 -clip 1 -backend cuda -checkpoint-every 100 -out-dir runs/kodak-short-cuda
 go run ./cmd/mirage eval-manta-kodak -dir kodak -run-dir runs/kodak-reference -out-dir runs/kodak-eval
 go run ./cmd/mirage fetch-compressai-baseline -out-dir baselines/compressai -architectures bmshj2018-factorized,bmshj2018-hyperprior -qualities 1,2,3,4,5,6,7,8
 go run ./cmd/mirage encode -in input.png -out learned.mrg -manta-module runs/kodak-reference/mirage_v1_lambda_0p001.mll -manta-weights runs/kodak-reference/mirage_v1_lambda_0p001.weights.mll
