@@ -12,6 +12,18 @@ func TestMirageShortRecipeCPURegression(t *testing.T) {
 	if os.Getenv("MIRAGE_RUN_CPU_RECIPE_REGRESSION") != "1" {
 		t.Skip("set MIRAGE_RUN_CPU_RECIPE_REGRESSION=1 to run the long CPU training regression")
 	}
+	runMirageShortRecipeRegression(t, "reference")
+}
+
+func TestMirageShortRecipeCUDARegression(t *testing.T) {
+	if os.Getenv("MIRAGE_RUN_CUDA_RECIPE_REGRESSION") != "1" {
+		t.Skip("set MIRAGE_RUN_CUDA_RECIPE_REGRESSION=1 to run the CUDA training regression")
+	}
+	runMirageShortRecipeRegression(t, "cuda")
+}
+
+func runMirageShortRecipeRegression(t *testing.T, backend string) {
+	t.Helper()
 	kodakDir := os.Getenv("MIRAGE_KODAK_DIR")
 	if kodakDir == "" {
 		t.Fatal("MIRAGE_KODAK_DIR must point at the Kodak image directory")
@@ -37,6 +49,7 @@ func TestMirageShortRecipeCPURegression(t *testing.T) {
 		"-lr-schedule", "cosine",
 		"-lr-final", "0.000001",
 		"-clip", "1",
+		"-backend", backend,
 		"-out-dir", runDir,
 	}); err != nil {
 		t.Fatal(err)
@@ -58,6 +71,9 @@ func TestMirageShortRecipeCPURegression(t *testing.T) {
 	trainRun := trainSummary.Runs[0]
 	if trainRun.Steps != 2000 || trainRun.LatentChannels != 16 || trainRun.HyperChannels != 8 || trainRun.BitWidth != 4 {
 		t.Fatalf("unexpected training recipe: %+v", trainRun)
+	}
+	if trainRun.Backend != backend {
+		t.Fatalf("training backend = %q want %q", trainRun.Backend, backend)
 	}
 
 	var evalSummary evalMantaKodakSummary

@@ -196,6 +196,9 @@ func collectMantaEvalModels(runDir, modulePath, weightPath string) ([]evalMantaM
 			if strings.HasSuffix(mod, ".weights.mll") {
 				continue
 			}
+			if strings.HasSuffix(mod, ".optim.mll") {
+				continue
+			}
 			weights := strings.TrimSuffix(mod, ".mll") + ".weights.mll"
 			if _, err := os.Stat(weights); err != nil {
 				return nil, fmt.Errorf("missing weights for %s: %w", mod, err)
