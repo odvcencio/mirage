@@ -1,7 +1,6 @@
-// Package mirage contains the host-side substrate for Mirage Image v1.
+// Package mirage implements the host-side substrate for Mirage Image files.
 //
-// Mirage's trainable Manta networks are specified outside this repository, but
-// the bitstream, entropy-coder plumbing, image I/O, and TurboQuant latent
-// representation can live next to TurboQuant today. The code here follows the
-// v1 .mrg contract from docs/superpowers/specs/2026-04-12-mirage-v1-design.md.
+// The package owns the .mrg bitstream, entropy-coder plumbing, image I/O,
+// TurboQuant latent representation, and Manta-backed learned-codec entry
+// points used by the command-line tools.
 package mirage

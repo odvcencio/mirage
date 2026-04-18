@@ -1,43 +1,45 @@
 # Mirage
 
-Mirage is the TurboQuant-native image codec surface described in
-`docs/specs/2026-04-12-mirage-v1-design.md`.
+Mirage is a Go implementation of a TurboQuant-native image codec and `.mrg`
+bitstream. It owns the host-side codec substrate, browser decoder path, image
+I/O, arithmetic coding, latent payload coding, and Manta integration used by the
+learned codec entry points.
 
-This workspace currently lands the executable host-side v1 path:
+## What Is Implemented
 
-- `.mrg` v1 fixed 72-byte headers, payload slicing, and CRC-32 validation
-- a deterministic 32-bit arithmetic coder shared by encoder and WASM decoder
-- factorized latent payload coding for TurboQuant categorical and bit-plane
-  coordinate streams plus q_norm streams
-- per-symbol learned entropy model hooks for Manta logits/probabilities and
-  log-normal q_norm parameters
-- q_norm log-space norm quantization
-- channel-first RGB image helpers with PNG, JPEG, and PPM support
-- a TurboQuant latent adapter that quantizes one spatial position as one vector
-  over latent channels
-- a `mirage` CLI that can encode PNG/JPEG/PPM to `.mrg`, decode `.mrg` to PNG,
-  and print stream metadata
-- a Manta import path that exports the Mirage Image v1 `.mll` operator surface
-- an image-backed Manta reference training smoke that runs the Mirage v1
-  rate-distortion graph through Manta `ExecuteAutograd`
-- a learned Manta checkpoint path for `mirage encode`, `mirage decode`, and
-  `mirage eval` via `-manta-module` and `-manta-weights`
+- `.mrg` fixed 72-byte headers, payload slicing, and CRC-32 validation.
+- Deterministic 32-bit arithmetic coding shared by the Go encoder and WASM
+  decoder.
+- TurboQuant categorical and bit-plane latent payload coding for coordinate
+  streams plus q_norm streams.
+- Per-symbol learned entropy model hooks for Manta logits, probabilities, and
+  log-normal q_norm parameters.
+- Log-space q_norm quantization.
+- Channel-first RGB helpers with PNG, JPEG, and PPM support.
+- TurboQuant latent adapter that quantizes one spatial position as one vector
+  over latent channels.
+- `mirage` CLI commands for encode, decode, metadata inspection, evaluation,
+  Manta artifact initialization, training smoke tests, Kodak training, and
+  CompressAI baseline fetching.
+- Manta artifact path for exporting the Mirage Image `.mll` operator surface.
+- Learned Manta checkpoint path for `mirage encode`, `mirage decode`, and
+  `mirage eval` through `-manta-module` and `-manta-weights`.
 
-The learned-codec pieces from the spec live in Manta. This repo now imports the
-sibling Manta module for the v1 artifact builder, while the standalone
-host/WASM code keeps owning `.mrg` parsing, arithmetic coding, q_norm, and image
-I/O. Mirage depends on public Manta and TurboQuant module versions; there are no
-local module replaces in the standalone workspace.
+Mirage depends on public Manta and TurboQuant module versions. The standalone
+workspace has no local module replacements.
 
-Current v1 training baseline: the 2000-step Adam/cosine reference recipe on 10
-Kodak center crops reaches `22.2543 dB` at `0.3355 bpp` for lambda `0.01`.
-The same recipe is stable for lambda `0.001`; lambda `0.1` still needs
-checkpoint selection at this capacity. On the all-24 Kodak eval set, the
-center-crop checkpoint reaches `21.7257 dB` at `0.3398 bpp`; a one-random-crop
-transfer run is stable but currently lower at `21.5218 dB` and `0.3481 bpp`.
+## Current Baseline
+
+The 2000-step Adam/cosine reference recipe on 10 Kodak center crops reaches
+`22.2543 dB` at `0.3355 bpp` for lambda `0.01`. The same recipe is stable for
+lambda `0.001`.
+
+On the all-24 Kodak eval set, the center-crop checkpoint reaches `21.7257 dB`
+at `0.3398 bpp`. A one-random-crop transfer run is stable at `21.5218 dB` and
+`0.3481 bpp`.
+
 An 8-bit/32-latent/16-hyper capacity smoke reaches `21.8730 dB` by step 1000
-but spends `1.2173 bpp`, so wider capacity needs stronger rate calibration or
-GPU-backed iteration before a full sweep.
+at `1.2173 bpp`.
 
 ## Quick Start
 
