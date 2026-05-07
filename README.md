@@ -23,6 +23,10 @@ This workspace currently lands the executable host-side v1 path:
 - a learned Manta checkpoint path for `mirage encode`, `mirage decode`, and
   `mirage eval` via `-manta-module` and `-manta-weights`
 
+## Agent Skill
+
+Agents working with Mirage should use the [using-mirage](https://github.com/odvcencio/m31labs-skills/blob/main/skills/using-mirage/SKILL.md) skill.
+
 The learned-codec pieces from the spec live in Manta. This repo now imports the
 sibling Manta module for the v1 artifact builder, while the standalone
 host/WASM code keeps owning `.mrg` parsing, arithmetic coding, q_norm, and image
