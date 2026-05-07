@@ -5,6 +5,10 @@ bitstream. It owns the host-side codec substrate, browser decoder path, image
 I/O, arithmetic coding, latent payload coding, and Manta integration used by the
 learned codec entry points.
 
+## Agent Skill
+
+Agents working with Mirage should use the [using-mirage](https://github.com/odvcencio/m31labs-skills/blob/main/skills/using-mirage/SKILL.md) skill.
+
 ## What Is Implemented
 
 - `.mrg` fixed 72-byte headers, payload slicing, and CRC-32 validation.
