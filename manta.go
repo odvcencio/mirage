@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	mantaartifact "m31labs.dev/manta/artifact/manta"
-	"m31labs.dev/manta/models"
+	mantaartifact "github.com/odvcencio/manta/artifact/manta"
+	"github.com/odvcencio/manta/models"
 )
 
 // MantaModule returns the Manta Mirage Image v1 module. The artifact contains

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	mantaartifact "m31labs.dev/manta/artifact/manta"
+	mantaartifact "github.com/odvcencio/manta/artifact/manta"
 	"m31labs.dev/mirage"
 )
 

@@ -3,7 +3,7 @@ package mirage
 import (
 	"fmt"
 
-	turboquant "m31labs.dev/turboquant"
+	turboquant "github.com/odvcencio/turboquant"
 )
 
 // LatentPayloadModels contains the factorized entropy models used to turn a

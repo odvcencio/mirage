@@ -10,11 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	mantaartifact "m31labs.dev/manta/artifact/manta"
-	mantamodels "m31labs.dev/manta/models"
-	mantaruntime "m31labs.dev/manta/runtime"
-	"m31labs.dev/manta/runtime/backend"
-	_ "m31labs.dev/manta/runtime/backends/cuda"
+	mantaartifact "github.com/odvcencio/manta/artifact/manta"
+	mantamodels "github.com/odvcencio/manta/models"
+	mantaruntime "github.com/odvcencio/manta/runtime"
+	"github.com/odvcencio/manta/runtime/backend"
+	_ "github.com/odvcencio/manta/runtime/backends/cuda"
 )
 
 const defaultMantaReferenceTrainCropSize = 16
