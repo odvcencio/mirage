@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	mantaartifact "github.com/odvcencio/manta/artifact/manta"
-	"github.com/odvcencio/mirage"
+	"m31labs.dev/mirage"
 )
 
 func TestRunInitMantaWritesRunnableArtifact(t *testing.T) {

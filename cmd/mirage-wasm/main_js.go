@@ -6,7 +6,7 @@ import (
 	"context"
 	"syscall/js"
 
-	"github.com/odvcencio/mirage"
+	"m31labs.dev/mirage"
 )
 
 func main() {

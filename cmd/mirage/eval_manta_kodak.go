@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	mantaartifact "github.com/odvcencio/manta/artifact/manta"
-	"github.com/odvcencio/mirage"
+	"m31labs.dev/mirage"
 )
 
 func runEvalMantaKodak(args []string) error {

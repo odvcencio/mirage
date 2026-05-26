@@ -9,7 +9,7 @@ import (
 
 	mantamodels "github.com/odvcencio/manta/models"
 	mantaruntime "github.com/odvcencio/manta/runtime"
-	"github.com/odvcencio/mirage"
+	"m31labs.dev/mirage"
 )
 
 func TestRunEvalMantaKodakSingleCheckpoint(t *testing.T) {

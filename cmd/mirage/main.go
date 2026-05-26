@@ -18,7 +18,7 @@ import (
 	mantaruntime "github.com/odvcencio/manta/runtime"
 	"github.com/odvcencio/manta/runtime/backend"
 	"github.com/odvcencio/manta/runtime/backends/webgpu"
-	"github.com/odvcencio/mirage"
+	"m31labs.dev/mirage"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-module github.com/odvcencio/mirage
+module m31labs.dev/mirage
 
 go 1.25.1
 
