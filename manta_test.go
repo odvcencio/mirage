@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	mantaartifact "github.com/odvcencio/manta/artifact/manta"
+	mantaartifact "m31labs.dev/manta/artifact/manta"
 )
 
 func TestMantaModuleExport(t *testing.T) {

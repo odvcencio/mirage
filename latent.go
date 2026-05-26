@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	turboquant "github.com/odvcencio/turboquant"
+	turboquant "m31labs.dev/turboquant"
 )
 
 // LatentShape is the channel-first shape of one Mirage latent tensor.

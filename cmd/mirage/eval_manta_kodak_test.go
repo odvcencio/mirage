@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	mantamodels "github.com/odvcencio/manta/models"
-	mantaruntime "github.com/odvcencio/manta/runtime"
+	mantamodels "m31labs.dev/manta/models"
+	mantaruntime "m31labs.dev/manta/runtime"
 	"m31labs.dev/mirage"
 )
 
